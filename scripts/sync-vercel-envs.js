@@ -28,11 +28,26 @@ async function syncEnvs() {
 
   console.log('Starting environment variable sync to Vercel...');
 
-  let url = `https://api.vercel.com/v9/projects/${projectId}/env?upsert=true`;
-  if (teamId) {
-    url += `&teamId=${teamId}`;
+  const queryParams = teamId ? `?teamId=${teamId}` : '';
+
+  // 1. Fetch existing environment variables
+  console.log('Fetching existing environment variables from Vercel...');
+  const listResponse = await fetch(`https://api.vercel.com/v9/projects/${projectId}/env${queryParams}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
+  if (!listResponse.ok) {
+    const errorText = await listResponse.text();
+    console.error('❌ Failed to fetch existing environment variables:', errorText);
+    process.exit(1);
   }
 
+  const { envs: existingEnvs } = await listResponse.json();
+  console.log(`Fetched ${existingEnvs.length} existing variables.`);
+
+  // 2. Loop and sync keys
   for (const key of ENV_KEYS) {
     const value = process.env[key];
     if (value === undefined) {
@@ -40,9 +55,26 @@ async function syncEnvs() {
       continue;
     }
 
-    console.log(`Syncing ${key}...`);
+    // 3. Delete existing variables with the same key
+    const duplicates = existingEnvs.filter(env => env.key === key);
+    for (const dup of duplicates) {
+      console.log(`Removing old instance of ${key} (ID: ${dup.id})...`);
+      const deleteResponse = await fetch(`https://api.vercel.com/v9/projects/${projectId}/env/${dup.id}${queryParams}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse.text();
+        console.warn(`⚠️ Failed to remove old variable "${key}":`, errorText);
+      }
+    }
 
-    const response = await fetch(url, {
+    // 4. Create new environment variable
+    console.log(`Syncing ${key}...`);
+    const createResponse = await fetch(`https://api.vercel.com/v9/projects/${projectId}/env${queryParams}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -56,8 +88,8 @@ async function syncEnvs() {
       })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
       console.error(`❌ Failed to sync variable "${key}":`, errorText);
       process.exit(1);
     }
