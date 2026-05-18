@@ -14,7 +14,8 @@ const ENV_KEYS = [
 async function syncEnvs() {
   const token = process.env.VERCEL_TOKEN;
   const projectId = process.env.VERCEL_PROJECT_ID;
-  const teamId = process.env.VERCEL_TEAM_ID;
+  const orgId = process.env.VERCEL_ORG_ID;
+  const teamId = process.env.VERCEL_TEAM_ID || (orgId && orgId.startsWith('team_') ? orgId : undefined);
 
   if (!token) {
     console.error('Error: VERCEL_TOKEN environment variable is not defined.');
