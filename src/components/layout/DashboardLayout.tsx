@@ -23,10 +23,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store/auth-store";
+import { motion, AnimatePresence } from "framer-motion";
 
 // Mapping of permission templates to permitted modules
 const templatePermissions: Record<string, string[]> = {
-  "Weighman": ["Weighbridge", "Small Scale", "Farmers"],
+  "Weighman": ["Weighbridge", "Farmers"],
   "Cashier": ["Farmers", "Ledger", "Approvals"],
   "Godown Keeper": ["Stock", "Small Scale"],
   "Small Scale": ["Small Scale", "Farmers"],
@@ -50,6 +51,7 @@ const sidebarItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get("tab");
@@ -127,36 +129,53 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-screen bg-background overflow-hidden font-outfit">
       {/* Sidebar Backdrop (Mobile only) */}
-      {isMobile && isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm lg:hidden animate-in fade-in duration-300"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      <AnimatePresence>
+        {isMobile && isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
-      <aside 
+      <motion.aside 
+        animate={{
+          width: isSidebarOpen ? 288 : 80,
+          x: isMobile && !isSidebarOpen ? -288 : 0
+        }}
+        transition={{ type: "spring", stiffness: 350, damping: 35 }}
         className={cn(
-          "bg-card border-r border-border flex flex-col transform transition-all duration-300 ease-in-out z-[70]",
-          isSidebarOpen ? "w-72 translate-x-0" : (isMobile ? "w-72 -translate-x-full" : "w-20"),
+          "bg-card border-r border-border flex flex-col z-[70] h-full overflow-hidden",
           isMobile && "fixed inset-y-0 left-0 shadow-[20px_0_50px_-10px_rgba(0,0,0,0.3)]"
         )}
       >
         <div className={cn(
-          "flex items-center justify-between gap-3 transition-all duration-500",
+          "flex items-center justify-between gap-3 transition-all duration-300",
           isSidebarOpen ? "p-8" : "p-5 justify-center"
         )}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-primary-foreground font-black shadow-lg shadow-primary/20 shrink-0">
               GP
             </div>
-            {isSidebarOpen && (
-              <div className="flex flex-col animate-in fade-in slide-in-from-left-2 duration-500">
-                <span className="font-black text-xl tracking-tighter whitespace-nowrap overflow-hidden">
-                  Grain Portal
-                </span>
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none">Management v1.0</span>
-              </div>
-            )}
+            <AnimatePresence mode="wait">
+              {isSidebarOpen && (
+                <motion.div 
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex flex-col"
+                >
+                  <span className="font-black text-xl tracking-tighter whitespace-nowrap overflow-hidden">
+                    Grain Portal
+                  </span>
+                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none">Management v1.0</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           {isMobile && isSidebarOpen && (
             <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-muted rounded-xl transition-colors">
@@ -183,12 +202,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   "flex items-center rounded-2xl transition-all duration-300 group relative",
                   isSidebarOpen ? "px-4 py-3 gap-4" : "p-3 justify-center",
                   isActive 
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 font-black" 
+                    ? "text-primary-foreground font-black" 
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <item.icon className={cn("w-5 h-5 shrink-0 transition-transform group-hover:scale-110", isActive ? "text-white" : "text-muted-foreground group-hover:text-foreground")} />
-                {isSidebarOpen && <span className="text-sm tracking-tight">{item.name}</span>}
+                {isActive && (
+                  <motion.div
+                    layoutId="activeIndicator"
+                    className="absolute inset-0 bg-primary rounded-2xl shadow-lg shadow-primary/20"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                
+                <item.icon className={cn("w-5 h-5 shrink-0 transition-transform group-hover:scale-110 relative z-10", isActive ? "text-white" : "text-muted-foreground group-hover:text-foreground")} />
+                
+                <AnimatePresence mode="wait">
+                  {isSidebarOpen && (
+                    <motion.span 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -10 }}
+                      transition={{ duration: 0.15 }}
+                      className="text-sm tracking-tight relative z-10 whitespace-nowrap overflow-hidden"
+                    >
+                      {item.name}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+                
                 {!isSidebarOpen && !isMobile && (
                   <div className="absolute left-16 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0 whitespace-nowrap pointer-events-none z-[80] shadow-xl">
                     {item.name}
@@ -200,7 +241,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         <div className={cn(
-          "border-t border-border transition-all duration-500",
+          "border-t border-border transition-all duration-300",
           isSidebarOpen ? "p-6" : "p-4 flex justify-center"
         )}>
           <button
@@ -211,10 +252,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
           >
             <LogOut className="w-5 h-5 shrink-0 transition-transform group-hover:-translate-x-1" />
-            {isSidebarOpen && <span className="text-sm">Logout Session</span>}
+            <AnimatePresence mode="wait">
+              {isSidebarOpen && (
+                <motion.span 
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.15 }}
+                  className="text-sm whitespace-nowrap overflow-hidden"
+                >
+                  Logout Session
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
-      </aside>
+      </motion.aside>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -237,15 +290,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <span className="font-black text-sm tracking-tighter">Grain Portal</span>
               </div>
             )}
-
-            <div className="relative hidden md:block">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input 
-                type="text" 
-                placeholder="Command Palette..." 
-                className="pl-12 pr-6 py-2.5 bg-muted/50 rounded-2xl text-sm font-medium border-none focus:ring-4 focus:ring-primary/10 w-64 transition-all focus:w-80"
-              />
-            </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
@@ -256,14 +300,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             
             <div className="h-10 w-px bg-border/50 mx-1 sm:mx-2" />
             
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-black leading-none text-slate-900 uppercase tracking-tight">{user?.name || "User Account"}</p>
-                <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mt-1.5">{(user?.permissions as any)?.template || user?.role || "Operator"}</p>
-              </div>
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/10 text-primary font-black shadow-inner shadow-primary/5">
-                {user?.name?.charAt(0) || "U"}
-              </div>
+            <div className="relative">
+              <button 
+                onClick={() => setShowUserDropdown(!showUserDropdown)}
+                className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-2xl transition-all outline-none"
+              >
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-black leading-none text-slate-900 uppercase tracking-tight">{user?.name || "User Account"}</p>
+                  <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mt-1.5">{(user?.permissions as any)?.template || user?.role || "Operator"}</p>
+                </div>
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/10 text-primary font-black shadow-inner shadow-primary/5">
+                  {user?.name?.charAt(0) || "U"}
+                </div>
+              </button>
+
+              {showUserDropdown && (
+                <>
+                  {/* Click-outside backdrop */}
+                  <div className="fixed inset-0 z-50 cursor-default" onClick={() => setShowUserDropdown(false)} />
+                  
+                  {/* Dropdown Menu */}
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-[60] animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        handleLogout();
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors font-bold text-left"
+                    >
+                      <LogOut className="w-4 h-4 shrink-0" />
+                      Logout
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </header>

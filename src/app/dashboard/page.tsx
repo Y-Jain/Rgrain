@@ -90,6 +90,48 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (user?.role === 'staff') {
+      const template = (user.permissions as any)?.template;
+      if (template !== 'General Labor') {
+        const templatePermissions: Record<string, string[]> = {
+          "Weighman": ["Weighbridge", "Farmers"],
+          "Cashier": ["Farmers", "Ledger", "Approvals"],
+          "Godown Keeper": ["Stock", "Small Scale"],
+          "Small Scale": ["Small Scale", "Farmers"],
+          "General Labor": [],
+        };
+        const moduleRoutes: Record<string, string> = {
+          "Weighbridge": "/dashboard/weighbridge",
+          "Small Scale": "/dashboard/small-scale",
+          "Farmers": "/dashboard/farmers",
+          "Ledger": "/dashboard/ledger",
+          "Approvals": "/dashboard/approvals",
+          "Stock": "/dashboard/stock",
+        };
+        const templates = typeof template === 'string' ? template.split(',').map((t: string) => t.trim()) : [];
+        const allowedModules: string[] = [];
+        templates.forEach((t: string) => {
+          if (templatePermissions[t]) {
+            allowedModules.push(...templatePermissions[t]);
+          }
+        });
+        let firstRoute = "";
+        if (allowedModules.length > 0) {
+          for (const mod of allowedModules) {
+            if (moduleRoutes[mod]) {
+              firstRoute = moduleRoutes[mod];
+              break;
+            }
+          }
+        }
+        if (firstRoute) {
+          router.replace(firstRoute);
+        }
+      }
+    }
+  }, [user, router]);
+
+  useEffect(() => {
     if (user?.branchId || user?.role === 'superadmin' || overrideBranchId) {
       fetchDashboardData();
     }
@@ -476,7 +518,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={data?.avgRateTrend || []}>
                   <defs>
                     <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
@@ -540,7 +582,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[250px] sm:h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
@@ -592,7 +634,7 @@ export default function DashboardPage() {
             <div className="h-[280px] w-full relative">
               {categoryData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                       <Pie
                         data={categoryData}
@@ -651,7 +693,7 @@ export default function DashboardPage() {
             <div className="h-[280px] w-full relative">
               {sourceData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                       <Pie
                         data={sourceData}

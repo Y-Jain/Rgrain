@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { analyticsCache } from '@/lib/analytics-cache';
 
 export async function GET(request: Request) {
   try {
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
       status: 'PENDING'
     }).returning('*');
 
+    analyticsCache.clear();
     return NextResponse.json(newEntry);
   } catch (error: any) {
     console.error("Small scale API error:", error);

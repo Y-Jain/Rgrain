@@ -120,9 +120,7 @@ export default function ApprovalsPage() {
     }
   };
 
-  const calculatedAmount = selectedSlip?.type === 'WEIGHBRIDGE'
-    ? (Number(editNetWeight || 0) / 100) * Number(editRate || 0)
-    : Number(editNetWeight || 0) * Number(editRate || 0);
+  const calculatedAmount = (Number(editNetWeight || 0) / 100) * Number(editRate || 0);
 
   const handleApprove = async (id: string) => {
     try {
@@ -277,9 +275,7 @@ export default function ApprovalsPage() {
                   <h3 className="font-black text-slate-900 text-sm">{item.farmer_name}</h3>
                   <div className="flex items-center justify-between mt-3">
                     <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-70">
-                      {item.grain_category} • {item.type === 'WEIGHBRIDGE' 
-                        ? `${Number(item.net_weight).toFixed(2)} kg (${(Number(item.net_weight) / 100).toFixed(2)} Qtl)` 
-                        : `${Number(item.net_weight).toFixed(2)} Qtl`}
+                      {item.grain_category} • {Number(item.net_weight).toFixed(2)} kg ({(Number(item.net_weight) / 100).toFixed(2)} Qtl)
                     </div>
                     <div className="text-sm font-black text-slate-700 tracking-tighter">{formatCurrency(item.payable_amount)}</div>
                   </div>
@@ -459,9 +455,7 @@ export default function ApprovalsPage() {
                                   className="w-20 bg-white/10 border border-white/20 rounded-lg px-2 py-1 outline-none focus:border-primary text-sm font-black"
                                 />
                                 <span className="text-[10px] font-black opacity-50">
-                                  {selectedSlip.type === 'WEIGHBRIDGE' 
-                                    ? `kg (${(Number(editNetWeight || 0) / 100).toFixed(2)} Qtl) × ₹` 
-                                    : 'Qtl × ₹'}
+                                  kg ({(Number(editNetWeight || 0) / 100).toFixed(2)} Qtl) × ₹
                                 </span>
                                 <input 
                                   type="number" 
@@ -472,15 +466,7 @@ export default function ApprovalsPage() {
                               </div>
                             ) : (
                               <span className="text-xs font-black tracking-tight">
-                                {selectedSlip.type === 'WEIGHBRIDGE' ? (
-                                  <>
-                                    {Number(selectedSlip.net_weight).toFixed(2)} kg ({ (Number(selectedSlip.net_weight) / 100).toFixed(2) } Qtl) × ₹{selectedSlip.rate_per_mt}
-                                  </>
-                                ) : (
-                                  <>
-                                    {Number(selectedSlip.net_weight).toFixed(2)} Qtl × ₹{selectedSlip.price_per_unit}
-                                  </>
-                                )}
+                                {Number(selectedSlip.net_weight).toFixed(2)} kg ({(Number(selectedSlip.net_weight) / 100).toFixed(2)} Qtl) × ₹{selectedSlip.type === 'WEIGHBRIDGE' ? selectedSlip.rate_per_mt : selectedSlip.price_per_unit}
                               </span>
                             )}
                           </div>

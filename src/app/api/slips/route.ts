@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { analyticsCache } from '@/lib/analytics-cache';
 
 export async function GET(request: Request) {
   try {
@@ -284,6 +285,7 @@ export async function POST(request: Request) {
       farmer_mobile: farmer.mobile
     };
 
+    analyticsCache.clear();
     return NextResponse.json(slipWithFarmer);
   } catch (error: any) {
     console.error("Slip POST Error:", error);

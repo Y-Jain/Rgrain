@@ -47,7 +47,39 @@ export default function LoginPage() {
       if (data.user.role === "superadmin") {
         router.push("/superadmin/analytics");
       } else if (data.user.role === "staff") {
-        router.push("/dashboard/weighbridge");
+        const templatePermissions: Record<string, string[]> = {
+          "Weighman": ["Weighbridge", "Farmers"],
+          "Cashier": ["Farmers", "Ledger", "Approvals"],
+          "Godown Keeper": ["Stock", "Small Scale"],
+          "Small Scale": ["Small Scale", "Farmers"],
+          "General Labor": [],
+        };
+        const moduleRoutes: Record<string, string> = {
+          "Weighbridge": "/dashboard/weighbridge",
+          "Small Scale": "/dashboard/small-scale",
+          "Farmers": "/dashboard/farmers",
+          "Ledger": "/dashboard/ledger",
+          "Approvals": "/dashboard/approvals",
+          "Stock": "/dashboard/stock",
+        };
+        const template = data.user.permissions?.template;
+        const templates = typeof template === 'string' ? template.split(',').map((t: string) => t.trim()) : [];
+        const allowedModules: string[] = [];
+        templates.forEach((t: string) => {
+          if (templatePermissions[t]) {
+            allowedModules.push(...templatePermissions[t]);
+          }
+        });
+        let firstRoute = "/dashboard";
+        if (allowedModules.length > 0) {
+          for (const mod of allowedModules) {
+            if (moduleRoutes[mod]) {
+              firstRoute = moduleRoutes[mod];
+              break;
+            }
+          }
+        }
+        router.push(firstRoute);
       } else {
         router.push("/dashboard");
       }
@@ -85,14 +117,14 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground ml-1" htmlFor="email">
-                Email Address
+                Email / Mobile Number
               </label>
               <div className="relative group">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                 <input
                   id="email"
-                  type="email"
-                  // placeholder="jainyash9098@gmail.com"
+                  type="text"
+                  placeholder="Enter email or mobile number"
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                   value={email}

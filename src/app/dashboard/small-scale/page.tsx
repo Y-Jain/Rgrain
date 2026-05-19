@@ -307,8 +307,7 @@ export default function SmallScalePage() {
     }
   };
 
-  const assignedTemplates = ((user?.permissions as any)?.template || '').split(',').map((t: string)=>t.trim());
-  const canCreate = user?.role !== 'staff' || assignedTemplates.includes('Weighman') || assignedTemplates.includes('Godown Keeper') || assignedTemplates.includes('Small Scale');
+  const canCreate = true;
 
   return (
     <div className="space-y-8 pb-20">
@@ -741,9 +740,11 @@ export default function SmallScalePage() {
                            <button className="p-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Print">
                              <Printer className="w-4 h-4" />
                            </button>
-                           <button className="p-2 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Edit">
-                             <Edit className="w-4 h-4" />
-                           </button>
+                           {user?.role !== 'staff' && (
+                             <button className="p-2 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Edit">
+                               <Edit className="w-4 h-4" />
+                             </button>
+                           )}
                            {canDelete && (
                              <button 
                                 onClick={() => handleDelete(log.id)}

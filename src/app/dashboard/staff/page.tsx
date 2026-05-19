@@ -31,7 +31,7 @@ import HolidayManager from "./components/HolidayManager";
 import StaffLedgerModal from "./components/StaffLedgerModal";
 
 const permissionTemplates = [
-  { id: "tmpl-1", name: "Weighman",       modules: ["Weighbridge", "Small Scale", "Vehicle Logging"] },
+  { id: "tmpl-1", name: "Weighman",       modules: ["Weighbridge", "Vehicle Logging"] },
   { id: "tmpl-2", name: "Cashier",        modules: ["Farmer Ledger", "Payments", "Approvals View"] },
   { id: "tmpl-3", name: "Godown Keeper",  modules: ["Stock Entry", "Warehouse Map", "Transfers"] },
   { id: "tmpl-5", name: "Small Scale",    modules: ["Small Scale", "Ledger Updates"] },
@@ -75,7 +75,7 @@ export default function StaffManagementPage() {
   const [showLedgerModal, setShowLedgerModal]   = useState(false);
   const [submitting, setSubmitting]             = useState(false);
 
-  const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", templateId: "" });
+  const [newStaff, setNewStaff] = useState({ name: "", email: "", mobile: "", password: "", templateId: "" });
   const [editingStaff, setEditingStaff] = useState<any>(null);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
 
@@ -125,8 +125,8 @@ export default function StaffManagementPage() {
 
   const handleOnboard = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaff.name || !newStaff.email || !newStaff.password || !newStaff.templateId) {
-      toast.error("Please fill in all fields."); return;
+    if (!newStaff.name || (!newStaff.email && !newStaff.mobile) || !newStaff.password || !newStaff.templateId) {
+      toast.error("Please provide Name, Password, Role Template, and either Email or Mobile Number."); return;
     }
     setSubmitting(true);
     try {
@@ -134,15 +134,19 @@ export default function StaffManagementPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newStaff.name, email: newStaff.email, password: newStaff.password,
-          branch_id: user?.branchId, role_template: newStaff.templateId,
+          name: newStaff.name,
+          email: newStaff.email || null,
+          mobile: newStaff.mobile || null,
+          password: newStaff.password,
+          branch_id: user?.branchId,
+          role_template: newStaff.templateId,
         }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       toast.success(`${newStaff.name} has been onboarded.`);
       setShowOnboardModal(false);
-      setNewStaff({ name: "", email: "", password: "", templateId: "" });
+      setNewStaff({ name: "", email: "", mobile: "", password: "", templateId: "" });
       fetchStaff();
     } catch (err: any) {
       toast.error("Failed to onboard: " + err.message);
@@ -151,14 +155,21 @@ export default function StaffManagementPage() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingStaff.name || (!editingStaff.email && !editingStaff.mobile) || !editingStaff.templateId) {
+      toast.error("Please provide Name, Role Template, and either Email or Mobile Number."); return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/staff", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: editingStaff.id, name: editingStaff.name, email: editingStaff.email,
-          password: editingStaff.password, role_template: editingStaff.templateId,
+          id: editingStaff.id,
+          name: editingStaff.name,
+          email: editingStaff.email || null,
+          mobile: editingStaff.mobile || null,
+          password: editingStaff.password || undefined,
+          role_template: editingStaff.templateId,
         }),
       });
       const data = await res.json();
@@ -274,7 +285,12 @@ export default function StaffManagementPage() {
                                   </div>
                                   <div className="flex flex-col">
                                     <span className="font-bold text-slate-900 group-hover/item:text-primary transition-colors">{staff.name}</span>
-                                    <span className="text-[10px] text-muted-foreground">{staff.email}</span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {staff.email ? staff.email : ""}
+                                      {staff.email && staff.mobile ? " • " : ""}
+                                      {staff.mobile ? staff.mobile : ""}
+                                      {!staff.email && !staff.mobile ? "No contact info" : ""}
+                                    </span>
                                   </div>
                                 </div>
                               </td>
@@ -306,7 +322,7 @@ export default function StaffManagementPage() {
                                   <button
                                     onClick={() => {
                                       setEditingStaff({
-                                        id: staff.id, name: staff.name, email: staff.email,
+                                        id: staff.id, name: staff.name, email: staff.email || "", mobile: staff.mobile || "",
                                         templateId: staff.permissions?.template || "", password: "",
                                       });
                                       setShowEditModal(true);
@@ -419,9 +435,15 @@ export default function StaffManagementPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Work Email</label>
-                  <input type="email" required placeholder="ramesh@branch.com"
+                  <input type="email" placeholder="ramesh@branch.com"
                     className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold"
                     value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Mobile Number</label>
+                  <input type="text" placeholder="e.g. 9876543210"
+                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold"
+                    value={newStaff.mobile} onChange={(e) => setNewStaff({ ...newStaff, mobile: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Password</label>
@@ -499,9 +521,15 @@ export default function StaffManagementPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Work Email</label>
-                  <input type="email" required
+                  <input type="email" placeholder="ramesh@branch.com"
                     className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold"
                     value={editingStaff.email} onChange={(e) => setEditingStaff({ ...editingStaff, email: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Mobile Number</label>
+                  <input type="text" placeholder="e.g. 9876543210"
+                    className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold"
+                    value={editingStaff.mobile} onChange={(e) => setEditingStaff({ ...editingStaff, mobile: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">New Password (leave blank to keep)</label>

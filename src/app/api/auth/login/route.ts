@@ -18,32 +18,35 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const email = sanitizeInput(body.email);
+    const identifier = sanitizeInput(body.email || body.identifier);
     const password = body.password; // Don't sanitize password as it can contain special chars
 
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
+    if (!identifier || !password) {
+      return NextResponse.json({ error: 'Email/Mobile and password are required' }, { status: 400 });
     }
 
     const user = await db('users')
-      .whereRaw('LOWER(email) = LOWER(?)', [email])
+      .where((builder) => {
+        builder.whereRaw('LOWER(email) = LOWER(?)', [identifier])
+               .orWhere('mobile', identifier);
+      })
       .leftJoin('branches', 'users.branch_id', 'branches.id')
       .select('users.*', 'branches.name as branch_name')
       .first();
 
     if (!user) {
-      console.log('User not found for email:', email);
-      await logAudit('system', 'FAILED_LOGIN', `Failed login attempt for email: ${email}`, 'medium');
+      console.log('User not found for identifier:', identifier);
+      await logAudit('system', 'FAILED_LOGIN', `Failed login attempt for: ${identifier}`, 'medium');
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     // Secure Password Comparison
-    console.log('Comparing password for user:', user.email);
+    console.log('Comparing password for user:', user.email || user.mobile);
     const isPasswordValid = await comparePassword(password, user.password_hash);
     console.log('Password valid:', isPasswordValid);
     
     if (!isPasswordValid) {
-       console.log('Invalid password for user:', user.email);
+       console.log('Invalid password for user:', user.email || user.mobile);
        await logAudit(user.id, 'FAILED_LOGIN', 'Incorrect password entered', 'medium');
        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
@@ -56,8 +59,10 @@ export async function POST(request: Request) {
     const token = await createToken({
       id: user.id,
       email: user.email,
+      mobile: user.mobile,
       role: user.role,
-      branchId: user.branch_id
+      branchId: user.branch_id,
+      permissions: typeof user.permissions === 'string' ? JSON.parse(user.permissions) : user.permissions || {}
     });
 
     // Omit password hash from response
@@ -69,6 +74,7 @@ export async function POST(request: Request) {
         id: user.id,
         name: user.name,
         email: user.email,
+        mobile: user.mobile,
         role: user.role,
         branchId: user.branch_id,
         branchName: user.branch_name,

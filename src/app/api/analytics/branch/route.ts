@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { startOfDay, endOfDay, subDays, format } from 'date-fns';
+import { analyticsCache } from '@/lib/analytics-cache';
 
-interface CacheEntry {
-  data: any;
-  timestamp: number;
-}
-
-const cache = new Map<string, CacheEntry>();
 const CACHE_TTL = 120000; // 2 minutes in milliseconds
 
 export async function GET(request: Request) {
@@ -35,7 +30,7 @@ export async function GET(request: Request) {
     });
 
     const now = Date.now();
-    const cached = cache.get(cacheKey);
+    const cached = analyticsCache.get(cacheKey);
     if (cached && (now - cached.timestamp) < CACHE_TTL) {
       return NextResponse.json(cached.data);
     }
@@ -65,21 +60,74 @@ export async function GET(request: Request) {
       return query;
     };
 
-    // 1. KPI Data
+    // 1. Unified Concurrent Fetch for KPIs, Trends, Splits, and Recent Slips
+    const groupByField = categoryFilter ? 'subcategory' : 'grain_category';
+
     const [
-      todayPurchaseWeighbridge,
-      todayPurchaseSmallScale,
-      todayVehicles,
-      pendingSlipsCount,
-      pendingSmallScaleCount,
-      stockInWeighbridge,
-      stockInSmallScale,
-      stockOutWeighbridge,
-      stockOutSmallScale,
-      todayRateWeighbridge,
-      todayRateSmallScale
+      wbKpis,
+      ssKpis,
+      trendWeighbridgeRaw,
+      trendSmallScaleRaw,
+      splitInWb,
+      splitInSs,
+      splitOutWb,
+      splitOutSs,
+      recentSlips
     ] = await Promise.all([
-      // Filtered Purchase Amount (ONLY Approved Internal IN entries in date range)
+      // A. Weighbridge KPIs
+      applyFilters(
+        db('weighbridge_slips')
+          .where('branch_id', branchId)
+      ).select(
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN payable_amount ELSE 0 END) as today_purchase_sum", [startOfRange, endOfRange]),
+        db.raw("COUNT(CASE WHEN status = 'APPROVED' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN 1 END) as today_vehicles_count", [startOfRange, endOfRange]),
+        db.raw("COUNT(CASE WHEN status = 'PENDING' AND is_internal = true THEN 1 END) as pending_count"),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN net_weight ELSE 0 END) as stock_in_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN net_weight ELSE 0 END) as stock_out_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN rate_per_mt ELSE 0 END) as rate_sum", [startOfRange, endOfRange])
+      ).first(),
+
+      // B. Small Scale KPIs
+      applyFilters(
+        db('small_scale_entries')
+          .where('branch_id', branchId),
+        false
+      ).select(
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN total_amount ELSE 0 END) as today_purchase_sum", [startOfRange, endOfRange]),
+        db.raw("COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending_count"),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN total_weight ELSE 0 END) as stock_in_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND created_at >= ? AND created_at <= ? THEN total_weight ELSE 0 END) as stock_out_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN price_per_unit ELSE 0 END) as rate_sum", [startOfRange, endOfRange])
+      ).first(),
+
+      // C. Purchase Trend WB
+      applyFilters(
+        db('weighbridge_slips')
+          .where('status', 'APPROVED')
+          .where('entry_type', 'IN')
+          .where('is_internal', true)
+          .where('created_at', '>=', trendStartDate)
+          .where('created_at', '<=', trendEndDate)
+      ).select(db.raw('DATE(created_at) as date'))
+        .sum('net_weight as volume')
+        .sum('payable_amount as amount_sum')
+        .groupBy('date'),
+
+      // D. Purchase Trend SS
+      applyFilters(
+        db('small_scale_entries')
+          .where('branch_id', branchId)
+          .where('status', 'APPROVED')
+          .where('entry_type', 'IN')
+          .where('created_at', '>=', trendStartDate)
+          .where('created_at', '<=', trendEndDate),
+        false
+      ).select(db.raw('DATE(created_at) as date'))
+        .sum('total_weight as volume')
+        .sum('total_amount as amount_sum')
+        .groupBy('date'),
+
+      // E. Splits In WB
       applyFilters(
         db('weighbridge_slips')
           .where('branch_id', branchId)
@@ -87,8 +135,9 @@ export async function GET(request: Request) {
           .where('entry_type', 'IN')
           .where('is_internal', true)
           .whereBetween('created_at', [startOfRange, endOfRange])
-      ).sum('payable_amount as sum').first(),
-      
+      ).select(`${groupByField} as name`).sum('net_weight as value').sum('payable_amount as amount_sum').groupBy(groupByField),
+
+      // F. Splits In SS
       applyFilters(
         db('small_scale_entries')
           .where('branch_id', branchId)
@@ -96,52 +145,9 @@ export async function GET(request: Request) {
           .where('entry_type', 'IN')
           .whereBetween('created_at', [startOfRange, endOfRange]),
         false
-      ).sum('total_amount as sum').first(),
+      ).select(`${groupByField} as name`).sum('total_weight as value').sum('total_amount as amount_sum').groupBy(groupByField),
 
-      // Filtered Vehicles (ONLY Approved Internal slips created in date range)
-      applyFilters(
-        db('weighbridge_slips')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('is_internal', true)
-          .whereBetween('created_at', [startOfRange, endOfRange])
-      ).count('id as count').first(),
-
-      // Pending Slips (Internal)
-      applyFilters(
-        db('weighbridge_slips')
-          .where('branch_id', branchId)
-          .where('status', 'PENDING')
-          .where('is_internal', true)
-      ).count('id as count').first(),
-
-      applyFilters(
-        db('small_scale_entries')
-          .where('branch_id', branchId)
-          .where('status', 'PENDING'),
-        false
-      ).count('id as count').first(),
-
-      // Filtered Stock IN / Filtered Purchase Weight (ONLY Approved Internal in date range)
-      applyFilters(
-        db('weighbridge_slips')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'IN')
-          .where('is_internal', true)
-          .whereBetween('created_at', [startOfRange, endOfRange])
-      ).sum('net_weight as sum').first(),
-      
-      applyFilters(
-        db('small_scale_entries')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'IN')
-          .whereBetween('created_at', [startOfRange, endOfRange]),
-        false
-      ).sum('total_weight as sum').first(),
-      
-      // Filtered Stock OUT (ONLY Approved Internal in date range)
+      // G. Splits Out WB
       applyFilters(
         db('weighbridge_slips')
           .where('branch_id', branchId)
@@ -149,8 +155,9 @@ export async function GET(request: Request) {
           .where('entry_type', 'OUT')
           .where('is_internal', true)
           .whereBetween('created_at', [startOfRange, endOfRange])
-      ).sum('net_weight as sum').first(),
+      ).select(`${groupByField} as name`).sum('net_weight as value').groupBy(groupByField),
 
+      // H. Splits Out SS
       applyFilters(
         db('small_scale_entries')
           .where('branch_id', branchId)
@@ -158,60 +165,30 @@ export async function GET(request: Request) {
           .where('entry_type', 'OUT')
           .whereBetween('created_at', [startOfRange, endOfRange]),
         false
-      ).sum('total_weight as sum').first(),
+      ).select(`${groupByField} as name`).sum('total_weight as value').groupBy(groupByField),
 
-      // Filtered Sum of Rates specifically for Average Rate calculation
+      // I. Recent Slips
       applyFilters(
         db('weighbridge_slips')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'IN')
-          .where('is_internal', true)
-          .whereBetween('created_at', [startOfRange, endOfRange])
-      ).sum('rate_per_mt as sum').first(),
-
-      applyFilters(
-        db('small_scale_entries')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'IN')
-          .whereBetween('created_at', [startOfRange, endOfRange]),
-        false
-      ).sum('price_per_unit as sum').first()
+          .leftJoin('farmers', 'weighbridge_slips.farmer_id', 'farmers.id')
+          .where('weighbridge_slips.branch_id', branchId)
+          .where('weighbridge_slips.status', 'APPROVED')
+          .where('weighbridge_slips.is_internal', true)
+      ).select(
+          'weighbridge_slips.*',
+          'farmers.name as farmer_name',
+          'farmers.village as farmer_village'
+        )
+        .orderBy('weighbridge_slips.created_at', 'desc')
+        .limit(5)
     ]);
 
-    const totalInWeight = (parseFloat(stockInWeighbridge?.sum as string || '0') + parseFloat(stockInSmallScale?.sum as string || '0')) / 100;
-    const totalOutWeight = (parseFloat(stockOutWeighbridge?.sum as string || '0') + parseFloat(stockOutSmallScale?.sum as string || '0')) / 100;
+    const totalInWeight = (parseFloat(wbKpis?.stock_in_sum as string || '0') + parseFloat(ssKpis?.stock_in_sum as string || '0')) / 100;
+    const totalOutWeight = (parseFloat(wbKpis?.stock_out_sum as string || '0') + parseFloat(ssKpis?.stock_out_sum as string || '0')) / 100;
     const totalStock = totalInWeight - totalOutWeight;
 
-    const totalPurchaseAmount = (parseFloat(todayPurchaseWeighbridge?.sum as string || '0')) + (parseFloat(todayPurchaseSmallScale?.sum as string || '0'));
+    const totalPurchaseAmount = (parseFloat(wbKpis?.today_purchase_sum as string || '0')) + (parseFloat(ssKpis?.today_purchase_sum as string || '0'));
     const avgPurchaseRate = totalInWeight > 0 ? (totalPurchaseAmount / totalInWeight) : 0;
-
-    // 2. Purchase Trend (Last 7 Days from endOfRange)
-    const trendWeighbridgeRaw = await applyFilters(
-      db('weighbridge_slips')
-        .where('status', 'APPROVED')
-        .where('entry_type', 'IN')
-        .where('is_internal', true)
-        .where('created_at', '>=', trendStartDate)
-        .where('created_at', '<=', trendEndDate)
-    ).select(db.raw('DATE(created_at) as date'))
-      .sum('net_weight as volume')
-      .sum('payable_amount as amount_sum')
-      .groupBy('date');
-
-    const trendSmallScaleRaw = await applyFilters(
-      db('small_scale_entries')
-        .where('branch_id', branchId)
-        .where('status', 'APPROVED')
-        .where('entry_type', 'IN')
-        .where('created_at', '>=', trendStartDate)
-        .where('created_at', '<=', trendEndDate),
-      false
-    ).select(db.raw('DATE(created_at) as date'))
-      .sum('total_weight as volume')
-      .sum('total_amount as amount_sum')
-      .groupBy('date');
 
     // Fill in missing days for trend
     const trendData = [];
@@ -238,46 +215,6 @@ export async function GET(request: Request) {
       });
     }
 
-    // 3. Category/Subcategory Split
-    const groupByField = categoryFilter ? 'subcategory' : 'grain_category';
-
-    const [splitInWb, splitInSs, splitOutWb, splitOutSs] = await Promise.all([
-      applyFilters(
-        db('weighbridge_slips')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'IN')
-          .where('is_internal', true)
-          .whereBetween('created_at', [startOfRange, endOfRange])
-      ).select(`${groupByField} as name`).sum('net_weight as value').sum('payable_amount as amount_sum').groupBy(groupByField),
-
-      applyFilters(
-        db('small_scale_entries')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'IN')
-          .whereBetween('created_at', [startOfRange, endOfRange]),
-        false
-      ).select(`${groupByField} as name`).sum('total_weight as value').sum('total_amount as amount_sum').groupBy(groupByField),
-
-      applyFilters(
-        db('weighbridge_slips')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'OUT')
-          .where('is_internal', true)
-          .whereBetween('created_at', [startOfRange, endOfRange])
-      ).select(`${groupByField} as name`).sum('net_weight as value').groupBy(groupByField),
-
-      applyFilters(
-        db('small_scale_entries')
-          .where('branch_id', branchId)
-          .where('status', 'APPROVED')
-          .where('entry_type', 'OUT')
-          .whereBetween('created_at', [startOfRange, endOfRange]),
-        false
-      ).select(`${groupByField} as name`).sum('total_weight as value').groupBy(groupByField)
-    ]);
     // Merge entities
     const allNames = new Set([
       ...splitInWb.map((c: any) => c.name),
@@ -317,26 +254,11 @@ export async function GET(request: Request) {
       };
     }).filter(Boolean);
 
-    // 4. Recent Slips
-    const recentSlips = await applyFilters(
-      db('weighbridge_slips')
-        .leftJoin('farmers', 'weighbridge_slips.farmer_id', 'farmers.id')
-        .where('weighbridge_slips.branch_id', branchId)
-        .where('weighbridge_slips.status', 'APPROVED')
-        .where('weighbridge_slips.is_internal', true)
-    ).select(
-        'weighbridge_slips.*',
-        'farmers.name as farmer_name',
-        'farmers.village as farmer_village'
-      )
-      .orderBy('weighbridge_slips.created_at', 'desc')
-      .limit(5);
-
     const responseData = {
       kpis: {
-        todayPurchase: parseFloat(todayPurchaseWeighbridge?.sum as string || '0') + parseFloat(todayPurchaseSmallScale?.sum as string || '0'),
-        todayVehicles: parseInt(todayVehicles?.count as string || '0'),
-        pendingSlips: parseInt(pendingSlipsCount?.count as string || '0') + parseInt(pendingSmallScaleCount?.count as string || '0'),
+        todayPurchase: parseFloat(wbKpis?.today_purchase_sum as string || '0') + parseFloat(ssKpis?.today_purchase_sum as string || '0'),
+        todayVehicles: parseInt(wbKpis?.today_vehicles_count as string || '0'),
+        pendingSlips: parseInt(wbKpis?.pending_count as string || '0') + parseInt(ssKpis?.pending_count as string || '0'),
         totalStock: totalStock,
         todayWeight: totalInWeight,
         avgPurchaseRate
@@ -349,7 +271,7 @@ export async function GET(request: Request) {
       recentSlips
     };
 
-    cache.set(cacheKey, {
+    analyticsCache.set(cacheKey, {
       data: responseData,
       timestamp: now
     });

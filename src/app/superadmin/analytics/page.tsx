@@ -134,7 +134,7 @@ export default function SuperAdminAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="h-[350px] min-h-[350px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={data?.branchPerformance || []} layout="vertical" margin={{ left: 40, right: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                   <XAxis type="number" hide />
@@ -170,7 +170,7 @@ export default function SuperAdminAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="h-[280px] min-h-[280px] w-full relative">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie
                     data={data?.categorySplit || categoryDistribution}

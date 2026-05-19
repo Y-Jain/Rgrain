@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { analyticsCache } from '@/lib/analytics-cache';
 
 export async function GET(
   request: Request,
@@ -48,7 +49,7 @@ export async function PATCH(
       if (net_weight !== undefined) updateData.total_weight = net_weight;
       if (rate_per_mt !== undefined) updateData.price_per_unit = rate_per_mt;
       if (net_weight !== undefined && rate_per_mt !== undefined) {
-        updateData.total_amount = net_weight * rate_per_mt;
+        updateData.total_amount = (net_weight / 100) * rate_per_mt;
       } else if (payable_amount !== undefined) {
         updateData.total_amount = payable_amount;
       }
@@ -62,6 +63,7 @@ export async function PATCH(
         .returning('*');
       
       if (!updatedSS) return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
+      analyticsCache.clear();
       return NextResponse.json(updatedSS);
     } else {
       if (rejectReason !== undefined) updateData.rejection_reason = rejectReason;
@@ -121,6 +123,7 @@ export async function PATCH(
       });
 
       if (!updatedSlip) return NextResponse.json({ error: 'Slip not found' }, { status: 404 });
+      analyticsCache.clear();
       return NextResponse.json(updatedSlip);
     }
   } catch (error: any) {
@@ -140,10 +143,12 @@ export async function DELETE(
     if (scaleType === 'Small Scale') {
       await db('ledgers').where({ related_id: id }).del();
       await db('small_scale_entries').where({ id }).del();
+      analyticsCache.clear();
       return NextResponse.json({ success: true });
     } else {
       await db('ledgers').where({ related_id: id }).del();
       await db('weighbridge_slips').where({ id }).del();
+      analyticsCache.clear();
       return NextResponse.json({ success: true });
     }
   } catch (error: any) {

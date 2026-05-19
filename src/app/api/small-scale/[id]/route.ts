@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { analyticsCache } from '@/lib/analytics-cache';
 
 export async function PATCH(
   request: Request,
@@ -67,6 +68,7 @@ export async function PATCH(
     });
 
     if (!updatedEntry) return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
+    analyticsCache.clear();
     return NextResponse.json(updatedEntry);
   } catch (error: any) {
     console.error("Update Small Scale Error:", error);
@@ -95,6 +97,7 @@ export async function DELETE(
     await db('ledgers').where({ related_id: id }).del();
     await db('small_scale_entries').where({ id }).del();
 
+    analyticsCache.clear();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Delete Small Scale Error:", error);

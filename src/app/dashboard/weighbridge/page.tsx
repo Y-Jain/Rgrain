@@ -196,9 +196,7 @@ export default function WeighbridgePage() {
 
   useEffect(() => {
     if (user) {
-      const templateStr = (user.permissions as any)?.template || '';
-      const list = templateStr.split(',').map((t: string) => t.trim());
-      if (user.role === 'staff' && !list.includes('Weighman')) {
+      if (user.role === 'staff') {
         setActiveTab('history_in');
       }
       fetchRates();
@@ -632,7 +630,6 @@ export default function WeighbridgePage() {
               <History className="w-3.5 h-3.5" />
               Dispatch History
             </button>
-            {(user?.role !== 'staff' || ((user?.permissions as any)?.template || '').split(',').map((t: string)=>t.trim()).includes('Weighman')) && (
               <button 
                 onClick={() => setActiveTab('form')}
                 className={cn(
@@ -643,7 +640,6 @@ export default function WeighbridgePage() {
                 <Plus className="w-3.5 h-3.5" />
                 Bada Kata (In/Out Stock)
               </button>
-            )}
             {user?.role !== 'staff' && (
               <button 
                 onClick={() => setActiveTab('settings')}
@@ -969,10 +965,12 @@ export default function WeighbridgePage() {
                     <p className="text-4xl font-black tracking-tighter">{slips.length}</p>
                     <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Total Slips</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-black tracking-tighter text-primary">{(slips.reduce((acc, s) => acc + (s.net_weight || 0), 0) / 1000).toFixed(2)}</p>
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Tonnage (MT)</p>
-                  </div>
+                  {(user as any)?.role !== 'staff' && (
+                    <div className="text-right">
+                      <p className="text-2xl font-black tracking-tighter text-primary">{(slips.reduce((acc, s) => acc + (s.net_weight || 0), 0) / 1000).toFixed(2)}</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Tonnage (MT)</p>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -1270,55 +1268,59 @@ export default function WeighbridgePage() {
                                   >
                                     <Eye className="w-3.5 h-3.5" />
                                   </button>
-                                  <button 
-                                    onClick={() => {
-                                      const isWb = slip.scale_type !== 'Small Scale';
-                                      const currentWeight = isWb ? slip.net_weight : slip.total_weight;
-                                      const currentRate = isWb ? slip.rate_per_mt : slip.price_per_unit;
-                                      setEditForm({
-                                        id: slip.id,
-                                        scaleType: slip.scale_type || 'Weighbridge',
-                                        farmer_name: slip.farmer_name || slip.party_name || '',
-                                        farmer_mobile: slip.farmer_mobile || slip.party_mobile || '',
-                                        address: slip.address || '',
-                                        vehicle_no: slip.vehicle_no || '',
-                                        net_weight: currentWeight?.toString() || '0',
-                                        rate_per_mt: currentRate?.toString() || '0'
-                                      });
-                                      setIsEditModalOpen(true);
-                                    }}
-                                    className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Edit Record"
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button 
-                                    onClick={async () => {
-                                      if (!confirm(`Permanently remove entry #${slip.slip_no || slip.serial_number}?`)) return;
-                                      try {
-                                        const res = await fetch(`/api/slips/${slip.id}?scaleType=${slip.scale_type || 'Weighbridge'}`, {
-                                          method: 'DELETE'
-                                        });
-                                        if (res.ok) {
-                                          toast.success("Entry completely removed from system");
-                                          fetchSlips();
-                                        } else {
-                                          toast.error("Deletion rejected by database");
-                                        }
-                                      } catch (e) {
-                                        toast.error("Network interface error during deletion");
-                                      }
-                                    }}
-                                    className="p-2 hover:bg-white rounded-lg border border-slate-200 text-red-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Delete Entry"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {(user as any)?.role !== 'staff' && (
+                                     <>
+                                       <button 
+                                         onClick={() => {
+                                           const isWb = slip.scale_type !== 'Small Scale';
+                                           const currentWeight = isWb ? slip.net_weight : slip.total_weight;
+                                           const currentRate = isWb ? slip.rate_per_mt : slip.price_per_unit;
+                                           setEditForm({
+                                             id: slip.id,
+                                             scaleType: slip.scale_type || 'Weighbridge',
+                                             farmer_name: slip.farmer_name || slip.party_name || '',
+                                             farmer_mobile: slip.farmer_mobile || slip.party_mobile || '',
+                                             address: slip.address || '',
+                                             vehicle_no: slip.vehicle_no || '',
+                                             net_weight: currentWeight?.toString() || '0',
+                                             rate_per_mt: currentRate?.toString() || '0'
+                                           });
+                                           setIsEditModalOpen(true);
+                                         }}
+                                         className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Edit Record"
+                                       >
+                                         <Edit className="w-3.5 h-3.5" />
+                                       </button>
+                                       <button 
+                                         onClick={async () => {
+                                           if (!confirm(`Permanently remove entry #${slip.slip_no || slip.serial_number}?`)) return;
+                                           try {
+                                             const res = await fetch(`/api/slips/${slip.id}?scaleType=${slip.scale_type || 'Weighbridge'}`, {
+                                               method: 'DELETE'
+                                             });
+                                             if (res.ok) {
+                                               toast.success("Entry completely removed from system");
+                                               fetchSlips();
+                                             } else {
+                                               toast.error("Deletion rejected by database");
+                                             }
+                                           } catch (e) {
+                                             toast.error("Network interface error during deletion");
+                                           }
+                                         }}
+                                         className="p-2 hover:bg-white rounded-lg border border-slate-200 text-red-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Delete Entry"
+                                       >
+                                         <Trash2 className="w-3.5 h-3.5" />
+                                       </button>
+                                     </>
+                                   )}
                                </div>
                             </td>
                           </tr>
                         ))
                       )}
                     </tbody>
-                    {filteredSlips.length > 0 && (
+                    {filteredSlips.length > 0 && (user as any)?.role !== 'staff' && (
                       <tfoot className="bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest sticky bottom-0 z-10 shadow-[0_-10px_30px_rgba(0,0,0,0.1)]">
                         <tr>
                           <td colSpan={5} className="px-8 py-5 text-right opacity-60 align-top">Grand Totals</td>
