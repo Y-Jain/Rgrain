@@ -89,6 +89,22 @@ function FarmersPageInner() {
       return;
     }
     
+    if (newFarmer.mobile.trim()) {
+      const rawMobile = newFarmer.mobile.trim();
+      const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
+      let cleaned = digitsOnly;
+      if (cleaned.length === 12 && cleaned.startsWith('91')) {
+        cleaned = cleaned.substring(2);
+      } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+        cleaned = cleaned.substring(1);
+      }
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (!phoneRegex.test(cleaned)) {
+        toast.error("Please enter a valid 10-digit mobile number.");
+        return;
+      }
+    }
+    
     setSubmitting(true);
     try {
       const res = await fetch('/api/farmers', {

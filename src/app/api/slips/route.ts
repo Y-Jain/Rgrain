@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const subcategory = searchParams.get('subcategory');
     const type = searchParams.get('type') || 'ALL'; // IN, OUT, ALL
     const scaleSource = searchParams.get('scaleSource') || 'ALL'; // WEIGHBRIDGE, SMALL_SCALE, ALL
+    const entryMode = searchParams.get('entryMode') || 'ALL'; // INTERNAL, EXTERNAL, ALL
 
     const offset = (page - 1) * limit;
 
@@ -71,6 +72,11 @@ export async function GET(request: Request) {
     if (type && type !== 'ALL') {
       wbQuery.where('weighbridge_slips.entry_type', type);
     }
+    if (entryMode === 'INTERNAL') {
+      wbQuery.where('weighbridge_slips.is_internal', true);
+    } else if (entryMode === 'EXTERNAL') {
+      wbQuery.where('weighbridge_slips.is_internal', false);
+    }
     if (category) {
       wbQuery.where('weighbridge_slips.grain_category', category);
     }
@@ -100,6 +106,12 @@ export async function GET(request: Request) {
     }
     if (type && type !== 'ALL') {
       ssQuery.where('entry_type', type);
+    }
+    if (entryMode === 'INTERNAL') {
+      // Small scale is always internal, no filter needed
+    } else if (entryMode === 'EXTERNAL') {
+      // Small scale is never external, so return no rows
+      ssQuery.whereRaw('1 = 0');
     }
     if (category) {
       ssQuery.where('grain_category', category);

@@ -197,7 +197,7 @@ export default function HolidayManager() {
                         </div>
                         <button
                           onClick={() => handleDelete(h.id, h.description)}
-                          className="p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                          className="p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-all "
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

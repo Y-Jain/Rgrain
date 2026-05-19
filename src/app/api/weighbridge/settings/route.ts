@@ -37,6 +37,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Branch ID is required' }, { status: 400 });
     }
 
+    // Safeguard: Check if any weighbridge slips already exist with a serial number >= startingSerialNumber
+    const maxSlip = await db('weighbridge_slips')
+      .where({ branch_id: branchId })
+      .max('serial_number as max_serial')
+      .first();
+
+    const maxSerial = parseInt((maxSlip as any)?.max_serial as string || '0');
+
+    if (startingSerialNumber <= maxSerial) {
+      return NextResponse.json({ 
+        error: `Cannot reset starting number to #${startingSerialNumber}. A slip with number #${maxSerial} already exists. Please choose a starting number greater than #${maxSerial} to prevent duplicate records.` 
+      }, { status: 400 });
+    }
+
     const existing = await db('weighbridge_settings').where({ branch_id: branchId }).first();
 
     if (existing) {

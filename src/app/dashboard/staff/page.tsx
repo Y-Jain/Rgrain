@@ -190,8 +190,8 @@ export default function StaffManagementPage() {
       </div>
 
       {/* Tabs */}
-      <div className="mt-8 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="flex items-center gap-1 bg-slate-100/80 p-1.5 rounded-[1.25rem] w-max min-w-full sm:w-fit border border-border/40">
+      <div className="mt-8 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-[1.25rem] w-full sm:w-fit border border-border/40">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -206,7 +206,7 @@ export default function StaffManagementPage() {
                   }
                 }}
                 className={cn(
-                  "flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-200 whitespace-nowrap shrink-0",
+                  "flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 whitespace-nowrap flex-1 min-w-[130px] sm:flex-none sm:min-w-0",
                   activeTab === tab.id
                     ? "bg-white text-primary shadow-md border border-border/30"
                     : "text-muted-foreground hover:text-slate-700 hover:bg-white/50"
@@ -302,7 +302,7 @@ export default function StaffManagementPage() {
                                 </button>
                               </td>
                               <td className="py-4 px-6 text-right">
-                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex items-center justify-end gap-1 ">
                                   <button
                                     onClick={() => {
                                       setEditingStaff({

@@ -162,10 +162,19 @@ export default function WeighbridgePage() {
       if (filters.subcategory) params.append('subcategory', filters.subcategory);
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
       if (filters.dateTo) params.append('dateTo', filters.dateTo);
-      if (filters.scaleSource) params.append('scaleSource', filters.scaleSource);
+      if (filters.scaleSource) {
+        let sourceParam = filters.scaleSource;
+        if (sourceParam === 'Weighbridge') sourceParam = 'WEIGHBRIDGE';
+        if (sourceParam === 'Small Scale') sourceParam = 'SMALL_SCALE';
+        params.append('scaleSource', sourceParam);
+      }
       
-      const typeFilter = activeTab === 'history_in' ? 'IN' : activeTab === 'history_out' ? 'OUT' : filters.type;
-      if (typeFilter && typeFilter !== 'ALL') params.append('type', typeFilter);
+      const transType = activeTab === 'history_in' ? 'IN' : activeTab === 'history_out' ? 'OUT' : 'ALL';
+      if (transType && transType !== 'ALL') params.append('type', transType);
+
+      if (filters.type && filters.type !== 'ALL') {
+        params.append('entryMode', filters.type);
+      }
 
       params.append('page', currentPage.toString());
       params.append('limit', itemsPerPage.toString());
@@ -278,6 +287,21 @@ export default function WeighbridgePage() {
     e.preventDefault();
     
     if (step === 1) {
+      if (formData.farmerMobile.trim()) {
+        const rawMobile = formData.farmerMobile.trim();
+        const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
+        let cleaned = digitsOnly;
+        if (cleaned.length === 12 && cleaned.startsWith('91')) {
+          cleaned = cleaned.substring(2);
+        } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+          cleaned = cleaned.substring(1);
+        }
+        const phoneRegex = /^[6-9]\d{9}$/;
+        if (!phoneRegex.test(cleaned)) {
+          toast.error("Please enter a valid 10-digit mobile number.");
+          return;
+        }
+      }
       setStep(2);
       return;
     }
@@ -387,10 +411,19 @@ export default function WeighbridgePage() {
       if (filters.subcategory) params.append('subcategory', filters.subcategory);
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
       if (filters.dateTo) params.append('dateTo', filters.dateTo);
-      if (filters.scaleSource) params.append('scaleSource', filters.scaleSource);
+      if (filters.scaleSource) {
+        let sourceParam = filters.scaleSource;
+        if (sourceParam === 'Weighbridge') sourceParam = 'WEIGHBRIDGE';
+        if (sourceParam === 'Small Scale') sourceParam = 'SMALL_SCALE';
+        params.append('scaleSource', sourceParam);
+      }
       
-      const typeFilter = activeTab === 'history_in' ? 'IN' : activeTab === 'history_out' ? 'OUT' : filters.type;
-      if (typeFilter && typeFilter !== 'ALL') params.append('type', typeFilter);
+      const transType = activeTab === 'history_in' ? 'IN' : activeTab === 'history_out' ? 'OUT' : 'ALL';
+      if (transType && transType !== 'ALL') params.append('type', transType);
+
+      if (filters.type && filters.type !== 'ALL') {
+        params.append('entryMode', filters.type);
+      }
 
       params.append('page', '1');
       params.append('limit', '1000000'); // Load all matching records for excel
@@ -577,12 +610,12 @@ export default function WeighbridgePage() {
           <p className="text-sm text-muted-foreground mt-1">Smart vehicle weighing & record management system.</p>
         </div>
         
-        <div className="flex items-center gap-3">
-          <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center overflow-x-auto">
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-1.5 w-full md:w-auto">
             <button 
               onClick={() => setActiveTab('history_in')}
               className={cn(
-                "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+                "px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap flex-1 min-w-[140px] md:flex-none md:min-w-0",
                 activeTab === 'history_in' ? "bg-slate-900 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
               )}
             >
@@ -592,7 +625,7 @@ export default function WeighbridgePage() {
             <button 
               onClick={() => setActiveTab('history_out')}
               className={cn(
-                "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+                "px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap flex-1 min-w-[140px] md:flex-none md:min-w-0",
                 activeTab === 'history_out' ? "bg-slate-900 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
               )}
             >
@@ -603,7 +636,7 @@ export default function WeighbridgePage() {
               <button 
                 onClick={() => setActiveTab('form')}
                 className={cn(
-                  "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+                  "px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap flex-1 min-w-[140px] md:flex-none md:min-w-0",
                   activeTab === 'form' ? "bg-slate-900 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
@@ -615,7 +648,7 @@ export default function WeighbridgePage() {
               <button 
                 onClick={() => setActiveTab('settings')}
                 className={cn(
-                  "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+                  "px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap flex-1 min-w-[140px] md:flex-none md:min-w-0",
                   activeTab === 'settings' ? "bg-slate-900 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
@@ -633,8 +666,8 @@ export default function WeighbridgePage() {
           <div className="lg:col-span-8 space-y-8">
             <Card className="border-none shadow-2xl rounded-[2.5rem] overflow-hidden">
               <div className={cn("h-3 transition-all duration-700", entryType === 'IN' ? "bg-primary" : "bg-blue-900")} />
-              <CardHeader className="p-8 sm:p-10 border-b border-slate-100 bg-slate-50/50">
-                <div className="flex items-center justify-between">
+              <CardHeader className="p-6 sm:p-10 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                   <div className="flex items-center gap-5">
                     <div className={cn(
                       "w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-black text-2xl transition-all shadow-xl",
@@ -1230,7 +1263,7 @@ export default function WeighbridgePage() {
                               </button>
                             </td>
                             <td className="px-8 py-6 text-right">
-                               <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                               <div className="flex items-center justify-end gap-2 ">
                                   <button 
                                     onClick={() => { setSelectedSlip(slip); setIsModalOpen(true); }}
                                     className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="View/Print"
@@ -1355,7 +1388,7 @@ export default function WeighbridgePage() {
                     <div className="h-px bg-slate-200 my-4" />
                     <div className="space-y-4">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">Reset Starting S.No Manually</label>
-                      <div className="flex items-stretch gap-2">
+                      <div className="flex flex-col sm:flex-row items-stretch gap-2">
                         <input 
                           type="number" 
                           className="flex-1 px-5 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-sm"
@@ -1373,13 +1406,16 @@ export default function WeighbridgePage() {
                                 body: JSON.stringify({ branchId: user?.branchId, startingSerialNumber: parseInt(val) })
                               });
                               const data = await res.json();
+                              if (!res.ok || data.error) {
+                                throw new Error(data.error || "Failed to update settings");
+                              }
                               setWeighbridgeSettings(data);
                               toast.success("Serial number sequence updated!");
-                            } catch (e) {
-                              toast.error("Failed to update settings");
+                            } catch (e: any) {
+                              toast.error(e.message || "Failed to update settings");
                             }
                           }}
-                          className="px-6 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95"
+                          className="px-6 py-3.5 sm:py-0 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95"
                         >
                           Update
                         </button>
@@ -1556,6 +1592,22 @@ export default function WeighbridgePage() {
               </button>
               <button 
                 onClick={async () => {
+                  if (editForm.farmer_mobile.trim()) {
+                    const rawMobile = editForm.farmer_mobile.trim();
+                    const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
+                    let cleaned = digitsOnly;
+                    if (cleaned.length === 12 && cleaned.startsWith('91')) {
+                      cleaned = cleaned.substring(2);
+                    } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+                      cleaned = cleaned.substring(1);
+                    }
+                    const phoneRegex = /^[6-9]\d{9}$/;
+                    if (!phoneRegex.test(cleaned)) {
+                      toast.error("Please enter a valid 10-digit mobile number.");
+                      return;
+                    }
+                  }
+
                   const nw = parseFloat(editForm.net_weight) || 0;
                   const rt = parseFloat(editForm.rate_per_mt) || 0;
                   const payload: any = {

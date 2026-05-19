@@ -135,15 +135,26 @@ export async function GET(request: Request) {
 
     // Category/Subcategory Split
     const groupByField = categoryFilter ? 'subcategory' : 'grain_category';
-    const [splitInWb, splitInSs] = await Promise.all([
+    const [splitInWb, splitInSs, splitOutWb, splitOutSs] = await Promise.all([
       applyFilters(db('weighbridge_slips').where({ status: 'APPROVED', entry_type: 'IN', is_internal: true }).whereBetween('created_at', [startOfRange, endOfRange])).select(`${groupByField} as name`).sum('net_weight as value').sum('rate_per_mt as rate_sum').groupBy(groupByField),
-      applyFilters(db('small_scale_entries').where({ status: 'APPROVED', entry_type: 'IN' }).whereBetween('created_at', [startOfRange, endOfRange]), false).select(`${groupByField} as name`).sum('total_weight as value').sum('price_per_unit as rate_sum').groupBy(groupByField)
+      applyFilters(db('small_scale_entries').where({ status: 'APPROVED', entry_type: 'IN' }).whereBetween('created_at', [startOfRange, endOfRange]), false).select(`${groupByField} as name`).sum('total_weight as value').sum('price_per_unit as rate_sum').groupBy(groupByField),
+      applyFilters(db('weighbridge_slips').where({ status: 'APPROVED', entry_type: 'OUT', is_internal: true }).whereBetween('created_at', [startOfRange, endOfRange])).select(`${groupByField} as name`).sum('net_weight as value').groupBy(groupByField),
+      applyFilters(db('small_scale_entries').where({ status: 'APPROVED', entry_type: 'OUT' }).whereBetween('created_at', [startOfRange, endOfRange]), false).select(`${groupByField} as name`).sum('total_weight as value').groupBy(groupByField)
     ]);
 
-    const allNames = new Set([...splitInWb.map((c: any) => c.name), ...splitInSs.map((c: any) => c.name)]);
+    const allNames = new Set([
+      ...splitInWb.map((c: any) => c.name),
+      ...splitInSs.map((c: any) => c.name),
+      ...splitOutWb.map((c: any) => c.name),
+      ...splitOutSs.map((c: any) => c.name)
+    ]);
     const categorySplit = Array.from(allNames).map((name: any) => {
       if (!name) return null;
-      const val = (parseFloat(splitInWb.find((c: any) => c.name === name)?.value || '0') + parseFloat(splitInSs.find((c: any) => c.name === name)?.value || '0')) / 100;
+      const wbIn = parseFloat(splitInWb.find((c: any) => c.name === name)?.value || '0');
+      const ssIn = parseFloat(splitInSs.find((c: any) => c.name === name)?.value || '0');
+      const wbOut = parseFloat(splitOutWb.find((c: any) => c.name === name)?.value || '0');
+      const ssOut = parseFloat(splitOutSs.find((c: any) => c.name === name)?.value || '0');
+      const val = (wbIn + ssIn - wbOut - ssOut) / 100;
       return { name, value: val > 0 ? val : 0 };
     }).filter((item: any) => item && item.value > 0);
 

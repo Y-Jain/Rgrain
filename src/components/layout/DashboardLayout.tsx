@@ -134,10 +134,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         />
       )}
 
-      {/* Sidebar / Sidepanel */}
       <aside 
         className={cn(
-          "bg-card border-r border-border flex flex-col transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] z-[70]",
+          "bg-card border-r border-border flex flex-col transform transition-all duration-300 ease-in-out z-[70]",
           isSidebarOpen ? "w-72 translate-x-0" : (isMobile ? "w-72 -translate-x-full" : "w-20"),
           isMobile && "fixed inset-y-0 left-0 shadow-[20px_0_50px_-10px_rgba(0,0,0,0.3)]"
         )}

@@ -207,6 +207,22 @@ export default function SmallScalePage() {
       return;
     }
 
+    if (partyInfo.mobile.trim()) {
+      const rawMobile = partyInfo.mobile.trim();
+      const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
+      let cleaned = digitsOnly;
+      if (cleaned.length === 12 && cleaned.startsWith('91')) {
+        cleaned = cleaned.substring(2);
+      } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+        cleaned = cleaned.substring(1);
+      }
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (!phoneRegex.test(cleaned)) {
+        toast.error("Please enter a valid 10-digit mobile number.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/small-scale', {
@@ -631,7 +647,7 @@ export default function SmallScalePage() {
                  <label className="text-[10px] font-black text-muted-foreground uppercase">Category</label>
                  <select 
                     value={filters.category}
-                    onChange={e => setFilters({...filters, category: e.target.value})}
+                    onChange={e => setFilters({...filters, category: e.target.value, subcategory: ""})}
                     className="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-xs font-bold appearance-none"
                  >
                     <option value="">All Categories</option>
@@ -640,13 +656,31 @@ export default function SmallScalePage() {
               </div>
               <div className="space-y-1">
                  <label className="text-[10px] font-black text-muted-foreground uppercase">Subcategory</label>
-                 <input 
-                   type="text" 
-                   placeholder="Search..."
+                 <select 
                    value={filters.subcategory}
                    onChange={e => setFilters({...filters, subcategory: e.target.value})}
-                   className="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-xs font-bold"
-                 />
+                   disabled={!filters.category}
+                   className="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-xs font-bold appearance-none disabled:opacity-50"
+                 >
+                   <option value="">{filters.category ? "All Subcategories" : "Select Category First"}</option>
+                   {(() => {
+                      const selected = availableRates.find(r => r.category_name === filters.category);
+                      if (!selected) return null;
+                      try {
+                         let subs = [];
+                         if (Array.isArray(selected.subcategories)) {
+                            subs = selected.subcategories;
+                         } else if (typeof selected.subcategories === 'string') {
+                            subs = JSON.parse(selected.subcategories);
+                         }
+                         return subs.map((sub: string) => (
+                            <option key={sub} value={sub}>{sub}</option>
+                         ));
+                      } catch (e) {
+                         return null;
+                      }
+                   })()}
+                 </select>
               </div>
            </div>
         </CardHeader>
@@ -700,7 +734,7 @@ export default function SmallScalePage() {
                         <p className="text-[10px] text-muted-foreground">{new Date(log.created_at).toLocaleTimeString()}</p>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <div className="flex items-center justify-end gap-1 ">
                            <button className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all" title="View">
                              <Eye className="w-4 h-4" />
                            </button>

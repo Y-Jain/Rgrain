@@ -215,7 +215,7 @@ export default function RatesPage() {
                                      </div>
                                   </td>
                                   <td className="py-4 px-6 text-right">
-                                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                     <div className="flex items-center justify-end gap-1 ">
                                         <button 
                                           onClick={() => openEdit(r)}
                                           className="p-2 hover:bg-muted rounded-xl text-muted-foreground hover:text-primary transition-all"

@@ -23,17 +23,17 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
   if (!isOpen || !slip) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[95vh] border border-white/20">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[98vh] sm:max-h-[95vh] border border-white/20">
         {/* Header */}
-        <div className="px-10 py-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner">
-              <Printer className="w-6 h-6" />
+        <div className="px-4 sm:px-10 py-4 sm:py-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner shrink-0">
+              <Printer className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">Document Preview</h2>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Digital Weighbridge Slip • {slip.slip_no}</p>
+              <h2 className="text-base sm:text-xl font-black text-gray-900 tracking-tight uppercase">Document Preview</h2>
+              <p className="text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">Digital Weighbridge Slip • {slip.slip_no}</p>
             </div>
           </div>
           <button 
@@ -45,14 +45,14 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
         </div>
 
         {/* Content - Scrollable */}
-        <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
+        <div className="flex-1 overflow-y-auto p-2 sm:p-10 bg-slate-50/50">
           {/* Printable Area */}
           <div 
             ref={contentRef}
-            className="bg-white p-12 shadow-2xl border border-gray-100 rounded-[2rem] mx-auto max-w-[210mm] print:shadow-none print:border-none print:p-0 print:m-0"
+            className="bg-white p-4 sm:p-12 shadow-2xl border border-gray-100 rounded-2xl sm:rounded-[2rem] mx-auto max-w-[210mm] print:shadow-none print:border-none print:p-0 print:m-0"
           >
             {/* Slip Header - Branding */}
-            <div className="flex justify-between items-start mb-12 pb-8 border-b-4 border-slate-900">
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-6 mb-8 sm:mb-12 pb-6 sm:pb-8 border-b-4 border-slate-900">
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center">
@@ -66,7 +66,7 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
                   <p>Contact: +91 9098567944 | info@renixsolution.com</p>
                 </div>
               </div>
-              <div className="text-right space-y-2">
+              <div className="text-left sm:text-right space-y-2 w-full sm:w-auto">
                 <div className="bg-slate-900 text-white px-5 py-2 rounded-xl text-xl font-black inline-block shadow-lg">
                   SLIP #{slip.serial_number || slip.slip_no.split('-')[1]}
                 </div>
@@ -81,7 +81,7 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
             </div>
 
             {/* Slip Body */}
-            <div className="grid grid-cols-2 gap-16 mb-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-16 mb-8 sm:mb-12">
               <div className="space-y-8">
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-slate-400">
@@ -160,7 +160,7 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
             </div>
 
             {/* Signature & QR */}
-            <div className="grid grid-cols-3 gap-8 pt-12 border-t border-slate-100">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 pt-8 sm:pt-12 border-t border-slate-100">
                <div className="col-span-1 flex flex-col justify-end">
                   <div className="text-center space-y-4">
                     <div className="h-16 flex items-center justify-center italic text-slate-300 font-serif">
@@ -205,22 +205,22 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
         </div>
 
         {/* Actions */}
-        <div className="px-10 py-6 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-4">
+        <div className="px-4 sm:px-10 py-4 sm:py-6 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 sm:gap-4">
           <button 
-            className="px-6 py-3 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center gap-2 transition-all border border-transparent hover:border-slate-200"
+            className="px-6 py-3 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center justify-center gap-2 transition-all border border-transparent hover:border-slate-200"
           >
             <Download className="w-4 h-4" />
             Download PDF
           </button>
           <button 
-            className="px-6 py-3 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center gap-2 transition-all border border-transparent hover:border-slate-200"
+            className="px-6 py-3 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center justify-center gap-2 transition-all border border-transparent hover:border-slate-200"
           >
             <Share2 className="w-4 h-4" />
             Share Slip
           </button>
           <button 
             onClick={() => handlePrint()}
-            className="px-10 py-3 bg-slate-900 text-white text-xs font-black rounded-xl flex items-center gap-3 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20"
+            className="px-10 py-3 bg-slate-900 text-white text-xs font-black rounded-xl flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20"
           >
             <Printer className="w-4 h-4" />
             Print Official Slip

@@ -111,7 +111,7 @@ export default function LedgerPage() {
       {/* Date Filters Row */}
       <Card className="border-none shadow-sm bg-slate-50/50 mt-6">
         <CardContent className="p-4">
-           <div className="flex flex-col md:flex-row items-end gap-4">
+           <div className="flex flex-col md:flex-row items-stretch md:items-end gap-4">
               <div className="space-y-1.5 flex-1">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                     <Calendar className="w-3 h-3" /> From Date
@@ -147,12 +147,12 @@ export default function LedgerPage() {
                     <option value="ALL">All Sources</option>
                     <option value="WEIGHBRIDGE">Weighbridge Only</option>
                     <option value="SMALL_SCALE">Small Scale Only</option>
-                 </select>
+                  </select>
               </div>
-              <div className="flex-none">
+              <div className="flex-none w-full md:w-auto">
                  <button 
                    onClick={fetchLedger}
-                   className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
+                   className="w-full px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
                  >
                     Sync Ledger
                  </button>
@@ -162,19 +162,20 @@ export default function LedgerPage() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-8">
-        <div className="lg:col-span-1 space-y-4">
+        <div className="lg:col-span-1 grid grid-cols-2 lg:flex lg:flex-col gap-3 w-full lg:w-auto">
            {ledgerTabs.map((tab) => (
              <div 
                key={tab.id} 
                onClick={() => setActiveTab(tab.id)}
                className={cn(
-                "p-4 rounded-xl border transition-all cursor-pointer",
+                "p-3 lg:p-4 rounded-xl border transition-all cursor-pointer",
+                tab.id === 'all' ? "col-span-2 lg:col-span-1" : "col-span-1",
                 activeTab === tab.id ? "bg-primary/5 border-primary shadow-sm" : "bg-card border-border hover:border-primary/30"
               )}
              >
-                <div className="flex items-center justify-between">
-                   <span className="font-bold text-sm">{tab.label}</span>
-                   <BookOpen className={cn("w-4 h-4", activeTab === tab.id ? "text-primary" : "text-muted-foreground")} />
+                <div className="flex items-center justify-between gap-2">
+                   <span className="font-bold text-xs lg:text-sm whitespace-nowrap">{tab.label}</span>
+                   <BookOpen className={cn("w-4 h-4 shrink-0", activeTab === tab.id ? "text-primary" : "text-muted-foreground")} />
                 </div>
              </div>
            ))}
@@ -194,8 +195,8 @@ export default function LedgerPage() {
                      </div>
                   </div>
                </CardHeader>
-              <CardContent className="p-0">
-                 <table className="w-full text-sm">
+              <CardContent className="p-0 overflow-x-auto scrollbar-thin">
+                 <table className="w-full text-sm min-w-[800px]">
                     <thead>
                        <tr className="bg-muted/30 text-muted-foreground uppercase text-[10px] font-black tracking-widest border-b border-border">
                           <th className="text-left py-4 px-6">Date</th>
