@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { verifyToken } from '@/lib/auth-utils';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get('branchId');
@@ -9,6 +10,17 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const source = searchParams.get('source'); // 'WEIGHBRIDGE', 'SMALL_SCALE', 'ALL'
+
+    // SECURITY FIX: Enforce Tenant Boundaries (Cross-Tenant IDOR)
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (payload.role !== 'superadmin' && payload.branchId !== branchId) {
+      return NextResponse.json({ error: 'Forbidden: You cannot view ledgers for other branches' }, { status: 403 });
+    }
 
     let query = db('ledgers')
       .where({ branch_id: branchId, ledger_type: type });
@@ -33,7 +45,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { branchId, type, narration, amount, relatedId, entryType } = body; // entryType: 'DEBIT' or 'CREDIT'
@@ -42,11 +54,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // SECURITY FIX: Enforce Backend RBAC for Manual Ledger Entries
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const isSuperAdmin = payload.role === 'superadmin';
+    const isAdmin = payload.role === 'admin';
+    const permissionsTemplate = (payload.permissions as any)?.template;
+    const isCashier = typeof permissionsTemplate === 'string' && permissionsTemplate.includes('Cashier');
+    
+    if (!isSuperAdmin && !isAdmin && !isCashier) {
+      return NextResponse.json({ error: 'Forbidden: Insufficient privileges to modify ledgers' }, { status: 403 });
+    }
+
+    // Validate Branch ID
+    if (!isSuperAdmin && payload.branchId !== branchId) {
+       return NextResponse.json({ error: 'Forbidden: Cannot modify ledgers for other branches' }, { status: 403 });
+    }
+
     const [newEntry] = await db.transaction(async (trx) => {
-      // Get last balance
+      // SECURITY FIX: Added .forUpdate() to acquire a row-level lock and prevent Race Conditions
       const lastEntry = await trx('ledgers')
         .where({ branch_id: branchId, ledger_type: type })
         .orderBy('created_at', 'desc')
+        .forUpdate()
         .first();
       
       const lastBalance = parseFloat(lastEntry?.balance || '0');

@@ -1,33 +1,25 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { startOfDay, endOfDay, subDays, format } from 'date-fns';
-import { analyticsCache } from '@/lib/analytics-cache';
+import { verifyToken } from '@/lib/auth-utils';
 
-const CACHE_TTL = 120000; // 2 minutes in milliseconds
-
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    // SECURITY FIX: Enforce Superadmin RBAC
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload || payload.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Forbidden: Global analytics is restricted to superadmins' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const categoryFilter = searchParams.get('category');
     const subcategoryFilter = searchParams.get('subcategory');
     const sourceFilter = searchParams.get('source') || 'all';
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-
-    // Caching Key based on query params
-    const cacheKey = JSON.stringify({
-      categoryFilter,
-      subcategoryFilter,
-      sourceFilter,
-      startDateParam,
-      endDateParam
-    });
-
-    const now = Date.now();
-    const cached = analyticsCache.get(cacheKey);
-    if (cached && (now - cached.timestamp) < CACHE_TTL) {
-      return NextResponse.json(cached.data);
-    }
 
     const today = new Date();
     const startOfRange = startDateParam ? startOfDay(new Date(startDateParam)) : startOfDay(today);
@@ -75,6 +67,8 @@ export async function GET(request: Request) {
       ).select(
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN net_weight ELSE 0 END) as stock_in_sum", [startOfRange, endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN net_weight ELSE 0 END) as stock_out_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at <= ? THEN net_weight ELSE 0 END) as lifetime_stock_in_sum", [endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND is_internal = true AND created_at <= ? THEN net_weight ELSE 0 END) as lifetime_stock_out_sum", [endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true THEN payable_amount ELSE 0 END) as all_time_payable_sum"),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN payable_amount ELSE 0 END) as today_purchase_sum", [startOfRange, endOfRange]),
         db.raw("COUNT(CASE WHEN status = 'APPROVED' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN 1 END) as today_vehicles_count", [startOfRange, endOfRange]),
@@ -89,6 +83,8 @@ export async function GET(request: Request) {
       ).select(
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN total_weight ELSE 0 END) as stock_in_sum", [startOfRange, endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND created_at >= ? AND created_at <= ? THEN total_weight ELSE 0 END) as stock_out_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at <= ? THEN total_weight ELSE 0 END) as lifetime_stock_in_sum", [endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND created_at <= ? THEN total_weight ELSE 0 END) as lifetime_stock_out_sum", [endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' THEN total_amount ELSE 0 END) as all_time_payable_sum"),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN total_amount ELSE 0 END) as today_purchase_sum", [startOfRange, endOfRange]),
         db.raw("COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending_count"),
@@ -123,7 +119,7 @@ export async function GET(request: Request) {
         db('weighbridge_slips')
           .where({ status: 'APPROVED', entry_type: 'IN', is_internal: true })
           .whereBetween('created_at', [startOfRange, endOfRange])
-      ).select(`${groupByField} as name`).sum('net_weight as value').sum('rate_per_mt as rate_sum').groupBy(groupByField),
+      ).select(`${groupByField} as name`).sum('net_weight as value').sum('payable_amount as amount_sum').groupBy(groupByField),
 
       // F. Splits In SS
       applyFilters(
@@ -131,7 +127,7 @@ export async function GET(request: Request) {
           .where({ status: 'APPROVED', entry_type: 'IN' })
           .whereBetween('created_at', [startOfRange, endOfRange]),
         false
-      ).select(`${groupByField} as name`).sum('total_weight as value').sum('price_per_unit as rate_sum').groupBy(groupByField),
+      ).select(`${groupByField} as name`).sum('total_weight as value').sum('total_amount as amount_sum').groupBy(groupByField),
 
       // G. Splits Out WB
       applyFilters(
@@ -176,6 +172,10 @@ export async function GET(request: Request) {
     const todayOutWeight = (parseFloat(wbKpis?.stock_out_sum as string || '0') + parseFloat(ssKpis?.stock_out_sum as string || '0')) / 100;
     const totalStock = todayInWeight - todayOutWeight;
     
+    const lifetimeInWeight = (parseFloat(wbKpis?.lifetime_stock_in_sum as string || '0') + parseFloat(ssKpis?.lifetime_stock_in_sum as string || '0')) / 100;
+    const lifetimeOutWeight = (parseFloat(wbKpis?.lifetime_stock_out_sum as string || '0') + parseFloat(ssKpis?.lifetime_stock_out_sum as string || '0')) / 100;
+    const lifetimeStock = lifetimeInWeight - lifetimeOutWeight;
+
     const todayPurchase = (parseFloat(wbKpis?.today_purchase_sum as string || '0')) + (parseFloat(ssKpis?.today_purchase_sum as string || '0'));
     const totalRateSum = (parseFloat(wbKpis?.rate_sum as string || '0')) + (parseFloat(ssKpis?.rate_sum as string || '0'));
     const avgPurchaseRate = todayInWeight > 0 ? (totalRateSum / todayInWeight) : 0;
@@ -222,9 +222,15 @@ export async function GET(request: Request) {
     const avgRateSplit = Array.from(allNames).map((name: any) => {
       if (!name) return null;
       const weight = (parseFloat(splitInWb.find((c: any) => c.name === name)?.value || '0') + parseFloat(splitInSs.find((c: any) => c.name === name)?.value || '0')) / 100;
-      const rateSum = parseFloat(splitInWb.find((c: any) => c.name === name)?.rate_sum || '0') + parseFloat(splitInSs.find((c: any) => c.name === name)?.rate_sum || '0');
-      return { name, value: weight > 0 ? (rateSum / weight) : 0 };
+      const amountSum = parseFloat(splitInWb.find((c: any) => c.name === name)?.amount_sum || '0') + parseFloat(splitInSs.find((c: any) => c.name === name)?.amount_sum || '0');
+      return { name, value: weight > 0 ? (amountSum / weight) : 0 };
     }).filter(Boolean);
+
+    const purchaseSplit = Array.from(allNames).map((name: any) => {
+      if (!name) return null;
+      const amountSum = parseFloat(splitInWb.find((c: any) => c.name === name)?.amount_sum || '0') + parseFloat(splitInSs.find((c: any) => c.name === name)?.amount_sum || '0');
+      return { name, value: amountSum };
+    }).filter((item: any) => item && item.value > 0);
 
     const responseData = {
       globalKpis: { 
@@ -238,6 +244,7 @@ export async function GET(request: Request) {
         todayVehicles: parseInt(wbKpis?.today_vehicles_count as string || '0'), 
         pendingSlips: parseInt(wbKpis?.pending_count as string || '0') + parseInt(ssKpis?.pending_count as string || '0'), 
         totalStock, 
+        lifetimeStock,
         todayWeight: todayInWeight,
         avgPurchaseRate 
       },
@@ -246,14 +253,10 @@ export async function GET(request: Request) {
       categorySplit,
       sourceSplit,
       avgRateSplit,
+      purchaseSplit,
       branchPerformance: branchPerformanceRaw.map((b: any) => ({ name: b.name, volume: parseFloat(b.volume as string || '0') / 100 })),
       recentSlips
     };
-
-    analyticsCache.set(cacheKey, {
-      data: responseData,
-      timestamp: now
-    });
 
     return NextResponse.json(responseData);
   } catch (error: any) {

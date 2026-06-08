@@ -29,18 +29,33 @@ import {
   Eye,
   Printer,
   Edit,
-  Trash
+  Trash,
+  X
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 
-const bagTypes = [
-  { id: "30kg", name: "30 KG Bag", weight: 30 },
-  { id: "50kg", name: "50 KG Bag", weight: 50 },
-  { id: "95kg", name: "95 KG Bag (Jute)", weight: 95 },
-  { id: "custom", name: "Custom Weight", weight: 0 },
-];
+import SlipModal from "@/components/weighbridge/SlipModal";
+
+const mapLogToSlip = (log: any) => ({
+  slip_no: `SS-${log.id}`,
+  serial_number: log.id,
+  entry_type: log.entry_type || 'IN',
+  farmer_name: log.party_name,
+  farmer_mobile: log.party_mobile,
+  address: log.address,
+  vehicle_no: "Small Scale",
+  driver_name: "N/A",
+  vehicle_type: "Walk-in",
+  grain_category: log.grain_category,
+  subcategory: log.subcategory,
+  net_weight: log.total_weight,
+  tollkata_charges: 0,
+  rate_per_mt: log.price_per_unit,
+  payable_amount: log.total_amount,
+  created_at: log.created_at || new Date().toISOString()
+});
 
 export default function SmallScalePage() {
   const { user } = useAuthStore();
@@ -49,7 +64,6 @@ export default function SmallScalePage() {
   const [availableRates, setAvailableRates] = useState<any[]>([]);
   
   const [entryType] = useState<'IN'>('IN'); // Force only PURCHASE (IN)
-  const [inputMode, setInputMode] = useState<'BAG' | 'BULK'>('BAG');
   
   const [partyInfo, setPartyInfo] = useState({
     name: "",
@@ -62,16 +76,13 @@ export default function SmallScalePage() {
   const [subcategory, setSubcategory] = useState("");
   const [pricePerUnit, setPricePerUnit] = useState(""); // Rate per MT
   
-  const [entries, setEntries] = useState([
-    { id: 1, bagType: "50kg", count: "", weight: 50, subtotal: 0 },
-  ]);
-  
   const [bulkWeight, setBulkWeight] = useState(""); // in KG
   const [moisture, setMoisture] = useState("");
   const [foreignMatter, setForeignMatter] = useState("");
   const [selectedBin, setSelectedBin] = useState("");
   const [logs, setLogs] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedSlip, setSelectedSlip] = useState<any>(null);
 
   // Filter States
   const [filters, setFilters] = useState({
@@ -99,15 +110,15 @@ export default function SmallScalePage() {
     }
   };
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (currentFilters = filters) => {
     try {
       const params = new URLSearchParams();
       if (user?.branchId) params.append('branchId', user.branchId);
-      if (filters.startDate) params.append('startDate', filters.startDate);
-      if (filters.endDate) params.append('endDate', filters.endDate);
-      if (filters.slipNo) params.append('slipNo', filters.slipNo);
-      if (filters.category) params.append('category', filters.category);
-      if (filters.subcategory) params.append('subcategory', filters.subcategory);
+      if (currentFilters.startDate) params.append('startDate', currentFilters.startDate);
+      if (currentFilters.endDate) params.append('endDate', currentFilters.endDate);
+      if (currentFilters.slipNo) params.append('slipNo', currentFilters.slipNo);
+      if (currentFilters.category) params.append('category', currentFilters.category);
+      if (currentFilters.subcategory) params.append('subcategory', currentFilters.subcategory);
 
       const res = await fetch(`/api/small-scale?${params.toString()}`);
       const data = await res.json();
@@ -117,6 +128,12 @@ export default function SmallScalePage() {
     } catch (error) {
       console.error("Failed to fetch small scale logs:", error);
     }
+  };
+
+  const handleClearFilters = () => {
+    const emptyFilters = { startDate: "", endDate: "", slipNo: "", category: "", subcategory: "" };
+    setFilters(emptyFilters);
+    fetchLogs(emptyFilters);
   };
 
   useEffect(() => {
@@ -161,39 +178,8 @@ export default function SmallScalePage() {
     }
   }, [grainCategory, availableRates]);
 
-  const addEntry = () => {
-    setEntries([...entries, { id: Date.now(), bagType: "50kg", count: "", weight: 50, subtotal: 0 }]);
-  };
-
-  const removeEntry = (id: number) => {
-    if (entries.length > 1) {
-      setEntries(entries.filter(e => e.id !== id));
-    }
-  };
-
-  const updateEntry = (id: number, field: string, value: any) => {
-    const updatedEntries = entries.map(e => {
-      if (e.id === id) {
-        const updated = { ...e, [field]: value };
-        if (field === "bagType") {
-          const type = bagTypes.find(t => t.id === value);
-          updated.weight = type?.weight || 0;
-        }
-        updated.subtotal = parseFloat(updated.count || "0") * updated.weight;
-        return updated;
-      }
-      return e;
-    });
-    setEntries(updatedEntries);
-  };
-
-  const totalWeight = inputMode === 'BAG' 
-    ? entries.reduce((acc, curr) => acc + (curr.subtotal || 0), 0)
-    : parseFloat(bulkWeight || "0");
-
-  const totalBags = inputMode === 'BAG'
-    ? entries.reduce((acc, curr) => acc + parseInt(curr.count || "0"), 0)
-    : 0;
+  const totalWeight = parseFloat(bulkWeight || "0") * 100;
+  const totalBags = 0;
 
   const totalAmount = (totalWeight / 100) * parseFloat(pricePerUnit || "0");
 
@@ -230,7 +216,7 @@ export default function SmallScalePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           branchId: user?.branchId,
-          bags: inputMode === 'BAG' ? entries : [],
+          bags: [],
           totalWeight,
           totalBags,
           moisture,
@@ -254,8 +240,10 @@ export default function SmallScalePage() {
 
       toast.success(`Purchase entry recorded and ledger updated!`);
       
+      const mappedSlip = mapLogToSlip(data);
+      setSelectedSlip(mappedSlip);
+
       // Reset form
-      setEntries([{ id: 1, bagType: "50kg", count: "", weight: 50, subtotal: 0 }]);
       setBulkWeight("");
       setMoisture("");
       setForeignMatter("");
@@ -279,6 +267,7 @@ export default function SmallScalePage() {
       'Category': log.grain_category,
       'Subcategory': log.subcategory || '-',
       'Weight (KG)': log.total_weight,
+      'Weight (Qtl)': (log.total_weight / 100).toFixed(2),
       'Rate (QTL)': log.price_per_unit,
       'Total Amount': log.total_amount,
     }));
@@ -397,26 +386,7 @@ export default function SmallScalePage() {
                     <CardTitle>Weight & Pricing</CardTitle>
                     <CardDescription>Record quantities and rates</CardDescription>
                  </div>
-                 <div className="flex bg-muted p-1 rounded-lg">
-                    <button 
-                      onClick={() => setInputMode('BAG')}
-                      className={cn("px-3 py-1 text-[10px] font-black rounded-md transition-all", inputMode === 'BAG' ? "bg-white shadow-sm" : "opacity-50")}
-                    >BAGS</button>
-                    <button 
-                      onClick={() => setInputMode('BULK')}
-                      className={cn("px-3 py-1 text-[10px] font-black rounded-md transition-all", inputMode === 'BULK' ? "bg-white shadow-sm" : "opacity-50")}
-                    >BULK KG</button>
-                 </div>
               </div>
-              {inputMode === 'BAG' && (
-                <button 
-                  onClick={addEntry}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Row
-                </button>
-              )}
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-4 border-b border-border/50">
@@ -474,55 +444,9 @@ export default function SmallScalePage() {
                  </div>
               </div>
 
-              {inputMode === 'BAG' ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-12 gap-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest px-2">
-                    <div className="col-span-5">Bag Type</div>
-                    <div className="col-span-3">Bag Count</div>
-                    <div className="col-span-3 text-right">Subtotal (KG)</div>
-                    <div className="col-span-1"></div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    {entries.map((entry) => (
-                      <div key={entry.id} className="grid grid-cols-12 gap-4 items-center animate-in fade-in slide-in-from-left-2 duration-300">
-                        <div className="col-span-5">
-                          <select 
-                            value={entry.bagType}
-                            onChange={(e) => updateEntry(entry.id, "bagType", e.target.value)}
-                            className="w-full px-4 py-2 bg-muted/50 border border-border rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none"
-                          >
-                            {bagTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                        </div>
-                        <div className="col-span-3">
-                          <input 
-                            type="number" 
-                            value={entry.count}
-                            onChange={(e) => updateEntry(entry.id, "count", e.target.value)}
-                            placeholder="0"
-                            className="w-full px-4 py-2 bg-muted/50 border border-border rounded-xl text-sm font-black focus:ring-2 focus:ring-primary/20 outline-none"
-                          />
-                        </div>
-                        <div className="col-span-3 text-right">
-                          <span className="text-sm font-black text-slate-700">{entry.subtotal.toFixed(1)}</span>
-                        </div>
-                        <div className="col-span-1 text-right">
-                          <button 
-                            onClick={() => removeEntry(entry.id)}
-                            className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
                 <div className="py-8 flex flex-col items-center justify-center space-y-4">
                    <div className="w-full max-w-xs space-y-2">
-                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center block">Total Weight (In Kilograms)</label>
+                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center block">Total Weight (In Quintals)</label>
                       <div className="relative">
                          <Scale className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                          <input 
@@ -533,9 +457,13 @@ export default function SmallScalePage() {
                            onChange={e => setBulkWeight(e.target.value)}
                          />
                       </div>
+                      {bulkWeight && !isNaN(parseFloat(bulkWeight)) && (
+                        <div className="text-center text-xs font-bold text-primary mt-2">
+                           Equals: {(parseFloat(bulkWeight) * 100).toFixed(2)} KG
+                        </div>
+                      )}
                    </div>
                 </div>
-              )}
             </CardContent>
           </Card>
         </div>
@@ -603,7 +531,14 @@ export default function SmallScalePage() {
                    </button>
                  )}
                  <button 
-                   onClick={fetchLogs}
+                   onClick={handleClearFilters}
+                   className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all shadow-sm"
+                 >
+                    <X className="w-4 h-4" />
+                    Clear
+                 </button>
+                 <button 
+                   onClick={() => fetchLogs()}
                    className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-all shadow-sm"
                  >
                     <Search className="w-4 h-4" />
@@ -715,8 +650,14 @@ export default function SmallScalePage() {
                       </td>
                       <td className="px-6 py-4 text-sm font-bold text-slate-600">{log.subcategory || '-'}</td>
                       <td className="px-6 py-4">
-                        <span className="text-sm font-black text-slate-900">{log.total_weight}</span>
-                        <span className="text-[10px] ml-1 font-bold text-muted-foreground">KG</span>
+                        <div>
+                          <span className="text-sm font-black text-slate-900">{log.total_weight}</span>
+                          <span className="text-[10px] ml-1 font-bold text-muted-foreground">KG</span>
+                        </div>
+                        <div className="mt-0.5">
+                          <span className="text-xs font-bold text-slate-600">{(log.total_weight / 100).toFixed(2)}</span>
+                          <span className="text-[10px] ml-1 font-bold text-muted-foreground">Qtl</span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={cn(
@@ -737,7 +678,7 @@ export default function SmallScalePage() {
                            <button className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all" title="View">
                              <Eye className="w-4 h-4" />
                            </button>
-                           <button className="p-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Print">
+                           <button onClick={() => setSelectedSlip(mapLogToSlip(log))} className="p-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Print">
                              <Printer className="w-4 h-4" />
                            </button>
                            {user?.role !== 'staff' && (
@@ -792,6 +733,12 @@ export default function SmallScalePage() {
           )}
         </CardContent>
       </Card>
+
+      <SlipModal 
+        isOpen={!!selectedSlip} 
+        slip={selectedSlip} 
+        onClose={() => setSelectedSlip(null)} 
+      />
     </div>
   );
 }

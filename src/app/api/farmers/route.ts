@@ -10,11 +10,9 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || '';
     const offset = (page - 1) * limit;
 
-    const isMobileSearch = /^\d+$/.test(search);
-
-    if (isMobileSearch) {
-      // If searching by number, fetch all, decrypt, filter by mobile, and paginate in-memory
-      const allFarmers = await db('farmers').select('*').orderBy('created_at', 'desc');
+    if (search) {
+      // Fetch recent records to perform in-memory decryption and multi-field search
+      const allFarmers = await db('farmers').select('*').orderBy('created_at', 'desc').limit(5000);
       const decrypted = allFarmers.map(f => {
         try {
           return {
@@ -26,7 +24,14 @@ export async function GET(request: Request) {
           return f;
         }
       });
-      const filtered = decrypted.filter(f => f.mobile && f.mobile.includes(search));
+      
+      const searchTerms = search.toLowerCase().split(' ').filter(t => t.trim());
+
+      const filtered = decrypted.filter(f => {
+        const searchableString = `${f.name || ''} ${f.village || ''} ${f.mobile || ''}`.toLowerCase();
+        return searchTerms.every(term => searchableString.includes(term));
+      });
+
       const totalCount = filtered.length;
       const totalPages = Math.ceil(totalCount / limit);
       const paginated = filtered.slice(offset, offset + limit);
@@ -37,14 +42,8 @@ export async function GET(request: Request) {
         totalCount
       });
     } else {
-      // Normal Name/Village search - fully optimized DB-level pagination & indexes!
+      // Normal pagination when no search term
       let baseQuery = db('farmers');
-      if (search) {
-        baseQuery = baseQuery.where(function() {
-          this.where('name', 'ilike', `%${search}%`)
-              .orWhere('village', 'ilike', `%${search}%`);
-        });
-      }
 
       const totalCountQuery = await baseQuery.clone().count('id as count').first();
       const totalCount = parseInt(totalCountQuery?.count as string || '0');
@@ -82,8 +81,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const name = sanitizeInput(body.name);
-    const mobile = body.mobile;
+    const name = sanitizeInput(body.name) || 'Unknown Customer';
+    const mobile = body.mobile || `NA-${Date.now()}`;
     const village = sanitizeInput(body.village);
     const district = sanitizeInput(body.district);
     const state = sanitizeInput(body.state);

@@ -29,7 +29,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<any[]>([]);
-  const [viewMode, setViewMode] = useState<"monthly" | "daily">("monthly");
+  const [viewMode, setViewMode] = useState<"monthly" | "daily" | "overall">("monthly");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
@@ -39,8 +39,10 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
   useEffect(() => {
     if (viewMode === "monthly") {
       fetchMonthlyAttendance();
-    } else {
+    } else if (viewMode === "daily") {
       fetchDailyAttendance();
+    } else {
+      fetchOverallAttendance();
     }
   }, [viewMonth, selectedDate, viewMode, user?.branchId]);
 
@@ -84,6 +86,30 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
     finally { setLoading(false); }
   };
 
+  const fetchOverallAttendance = async () => {
+    if (!user?.branchId) return;
+    setLoading(true);
+    try {
+      const attRes = await fetch(`/api/attendance?branchId=${user.branchId}`);
+      const attData = await attRes.json();
+      const holRes = await fetch(`/api/holidays?branchId=${user.branchId}`);
+      const holData = await holRes.json();
+      
+      let mergedRecords = [...(Array.isArray(attData) ? attData : [])];
+      holData.forEach((holiday: any) => {
+        const holidayDate = holiday.date.split('T')[0];
+        staffList.filter(s => s.is_active).forEach(staff => {
+          const exists = mergedRecords.find(r => r.user_id === staff.id && r.date.split('T')[0] === holidayDate);
+          if (!exists) {
+            mergedRecords.push({ user_id: staff.id, date: holiday.date, status: 'HOLIDAY', remarks: holiday.description });
+          }
+        });
+      });
+      setRecords(mergedRecords);
+    } catch { toast.error("Failed to load overall report"); }
+    finally { setLoading(false); }
+  };
+
   const exportToExcel = () => {
     const dataToExport = staffSummary.map(staff => ({
       "Staff Name": staff.name,
@@ -102,13 +128,20 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
     toast.success("Excel report downloaded!");
   };
 
-  // Build per-staff summary
   const staffSummary = staffList.filter(s => s.is_active).map(staff => {
     const staffRec = records.filter(r => r.user_id === staff.id);
     const counts = { PRESENT: 0, ABSENT: 0, LEAVE: 0, HOLIDAY: 0 };
-    staffRec.forEach(r => { if (r.status in counts) counts[r.status as keyof typeof counts]++; });
+    const presentDates: string[] = [];
+    staffRec.forEach(r => { 
+      if (r.status in counts) counts[r.status as keyof typeof counts]++; 
+      if (r.status === 'PRESENT') {
+        const d = new Date(r.date);
+        presentDates.push(d.toLocaleDateString('en-GB', {day: '2-digit', month: 'short'}));
+      }
+    });
+    // Sort presentDates so recent is first (or just keep chronological)
     const attendancePct = Math.round((counts.PRESENT / Math.max(counts.PRESENT + counts.ABSENT + counts.LEAVE, 1)) * 100);
-    return { ...staff, counts, total: staffRec.length, attendancePct };
+    return { ...staff, counts, total: staffRec.length, attendancePct, presentDates };
   });
 
   const activeStaffCount = staffList.filter(s => s.is_active).length || 1;
@@ -133,6 +166,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
         <div className="flex flex-wrap items-center gap-3">
           {/* Mode Switcher */}
           <div className="bg-slate-100 p-1 rounded-xl flex gap-1 border border-slate-200">
+            <button onClick={() => setViewMode("overall")} className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", viewMode === "overall" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-slate-700")}>Overall</button>
             <button onClick={() => setViewMode("monthly")} className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", viewMode === "monthly" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-slate-700")}>Monthly</button>
             <button onClick={() => setViewMode("daily")} className={cn("px-4 py-1.5 rounded-lg text-xs font-bold transition-all", viewMode === "daily" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-slate-700")}>Daily</button>
           </div>
@@ -156,7 +190,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
                 {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
-          ) : (
+          ) : viewMode === "daily" ? (
             <div className="flex items-center gap-2 bg-white border border-border rounded-xl p-1 px-3 shadow-sm">
               <CalendarIcon className="w-4 h-4 text-primary" />
               <input 
@@ -166,7 +200,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
                 className="bg-transparent text-sm font-bold outline-none border-none"
               />
             </div>
-          )}
+          ) : null}
 
           <button 
             onClick={exportToExcel}
@@ -190,7 +224,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
                   <cfg.icon className="w-5 h-5" />
                 </div>
                 <p className="text-3xl font-black text-slate-900">{count}</p>
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-1">{cfg.label} {viewMode === 'monthly' ? 'Total' : 'Today'}</p>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-1">{cfg.label} {viewMode === 'monthly' ? 'Total' : viewMode === 'overall' ? 'Total' : 'Today'}</p>
               </CardContent>
             </Card>
           );
@@ -201,7 +235,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
         <CardHeader className="border-b border-border/50 pb-6">
           <CardTitle>Staff Breakdown</CardTitle>
           <CardDescription>
-            {viewMode === 'monthly' ? `Detailed attendance for ${monthLabel}` : `Attendance records for ${new Date(selectedDate).toLocaleDateString('en-IN', { dateStyle: 'long' })}`}
+            {viewMode === 'monthly' ? `Detailed attendance for ${monthLabel}` : viewMode === 'overall' ? 'All-time comprehensive attendance record' : `Attendance records for ${new Date(selectedDate).toLocaleDateString('en-IN', { dateStyle: 'long' })}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -215,13 +249,14 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
                 <thead>
                   <tr className="bg-muted/30 text-muted-foreground uppercase text-[10px] font-black tracking-widest border-b border-border">
                     <th className="text-left py-4 px-6">Staff Member</th>
-                    <th className="text-center py-4 px-4">{viewMode === 'monthly' ? 'Present' : 'Status'}</th>
-                    {viewMode === 'monthly' && (
+                    <th className="text-center py-4 px-4">{viewMode !== 'daily' ? 'Present' : 'Status'}</th>
+                    {viewMode !== 'daily' && (
                       <>
                         <th className="text-center py-4 px-4">Absent</th>
                         <th className="text-center py-4 px-4">Leave</th>
                         <th className="text-center py-4 px-4">Holiday</th>
                         <th className="text-center py-4 px-6">Attendance %</th>
+                        <th className="text-left py-4 px-6 max-w-[200px]">Present Days</th>
                       </>
                     )}
                   </tr>
@@ -238,7 +273,7 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
                           </div>
                         </div>
                       </td>
-                      {viewMode === 'monthly' ? (
+                      {viewMode !== 'daily' ? (
                         <>
                           <td className="text-center py-4 px-4"><span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 font-black text-sm border border-emerald-200">{staff.counts.PRESENT}</span></td>
                           <td className="text-center py-4 px-4"><span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-50 text-red-700 font-black text-sm border border-red-200">{staff.counts.ABSENT}</span></td>
@@ -251,6 +286,16 @@ export default function AttendanceReport({ staffList }: { staffList: any[] }) {
                               </div>
                               <span className={cn("text-xs font-black min-w-[40px] text-right", staff.attendancePct >= 90 ? "text-emerald-600" : staff.attendancePct >= 75 ? "text-amber-600" : "text-red-600")}>{staff.total > 0 ? `${staff.attendancePct}%` : "—"}</span>
                             </div>
+                          </td>
+                          <td className="py-4 px-6 max-w-[200px]">
+                             <div className="max-h-16 overflow-y-auto flex flex-wrap gap-1 pr-1 scrollbar-thin">
+                               {staff.presentDates.map((d: string, i: number) => (
+                                 <span key={i} className="bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100 font-bold text-[9px] whitespace-nowrap">
+                                   {d}
+                                 </span>
+                               ))}
+                               {staff.presentDates.length === 0 && <span className="text-xs text-muted-foreground italic">None</span>}
+                             </div>
                           </td>
                         </>
                       ) : (

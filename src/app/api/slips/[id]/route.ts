@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { analyticsCache } from '@/lib/analytics-cache';
+import { verifyToken } from '@/lib/auth-utils';
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -31,13 +32,31 @@ export async function GET(
 }
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status, rejectReason, net_weight, rate_per_mt, payable_amount, scaleType, farmer_name, farmer_mobile, address, vehicle_no } = body;
+    const { status, rejectReason, net_weight, rate_per_mt, payable_amount, tollkata_charges, scaleType, farmer_name, farmer_mobile, address, vehicle_no, items } = body;
+
+    // SECURITY FIX: Enforce Backend RBAC for Approvals
+    if (status === 'APPROVED' || status === 'REJECTED') {
+      const token = request.cookies.get('auth-token')?.value;
+      if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      
+      const payload = await verifyToken(token);
+      if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      
+      const isSuperAdmin = payload.role === 'superadmin';
+      const isAdmin = payload.role === 'admin';
+      const template = (payload.permissions as any)?.template;
+      const isCashier = typeof template === 'string' && template.includes('Cashier');
+      
+      if (!isSuperAdmin && !isAdmin && !isCashier) {
+        return NextResponse.json({ error: 'Forbidden: Insufficient privileges to approve slips' }, { status: 403 });
+      }
+    }
 
     const updateData: any = {
       updated_at: new Date()
@@ -74,8 +93,10 @@ export async function PATCH(
       } else if (payable_amount !== undefined) {
         updateData.payable_amount = payable_amount;
       }
+      if (tollkata_charges !== undefined) updateData.tollkata_charges = tollkata_charges;
       if (address !== undefined) updateData.address = address;
       if (vehicle_no !== undefined) updateData.vehicle_no = vehicle_no;
+      if (items !== undefined) updateData.items = typeof items === 'string' ? items : JSON.stringify(items);
 
       const updatedSlip = await db.transaction(async (trx) => {
         const [slip] = await trx('weighbridge_slips')
@@ -90,9 +111,11 @@ export async function PATCH(
           const existingLedger = await trx('ledgers').where({ related_id: slip.id }).first();
           if (!existingLedger) {
             const ledgerType = slip.is_internal ? 'INTERNAL' : 'FARMER';
+            // SECURITY FIX: Added .forUpdate() to acquire a row-level lock and prevent Race Conditions during concurrent approvals
             const lastEntry = await trx('ledgers')
               .where({ branch_id: slip.branch_id, ledger_type: ledgerType })
               .orderBy('created_at', 'desc')
+              .forUpdate()
               .first();
             
             const lastBalance = parseFloat(lastEntry?.balance || '0');

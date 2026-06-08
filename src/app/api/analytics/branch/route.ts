@@ -1,11 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { startOfDay, endOfDay, subDays, format } from 'date-fns';
-import { analyticsCache } from '@/lib/analytics-cache';
+import { verifyToken } from '@/lib/auth-utils';
 
-const CACHE_TTL = 120000; // 2 minutes in milliseconds
-
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get('branchId');
@@ -19,20 +17,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Branch ID is required' }, { status: 400 });
     }
 
-    // Caching Key based on query params
-    const cacheKey = JSON.stringify({
-      branchId,
-      categoryFilter,
-      subcategoryFilter,
-      sourceFilter,
-      startDateParam,
-      endDateParam
-    });
+    // SECURITY FIX: Enforce Tenant Boundaries (Cross-Tenant IDOR)
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const now = Date.now();
-    const cached = analyticsCache.get(cacheKey);
-    if (cached && (now - cached.timestamp) < CACHE_TTL) {
-      return NextResponse.json(cached.data);
+    if (payload.role !== 'superadmin' && payload.branchId !== branchId) {
+      return NextResponse.json({ error: 'Forbidden: You cannot view analytics for other branches' }, { status: 403 });
     }
 
     const today = new Date();
@@ -72,7 +65,11 @@ export async function GET(request: Request) {
       splitInSs,
       splitOutWb,
       splitOutSs,
-      recentSlips
+      recentSlips,
+      lifetimeSplitInWb,
+      lifetimeSplitInSs,
+      lifetimeSplitOutWb,
+      lifetimeSplitOutSs
     ] = await Promise.all([
       // A. Weighbridge KPIs
       applyFilters(
@@ -84,6 +81,8 @@ export async function GET(request: Request) {
         db.raw("COUNT(CASE WHEN status = 'PENDING' AND is_internal = true THEN 1 END) as pending_count"),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN net_weight ELSE 0 END) as stock_in_sum", [startOfRange, endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN net_weight ELSE 0 END) as stock_out_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at <= ? THEN net_weight ELSE 0 END) as lifetime_stock_in_sum", [endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND is_internal = true AND created_at <= ? THEN net_weight ELSE 0 END) as lifetime_stock_out_sum", [endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND is_internal = true AND created_at >= ? AND created_at <= ? THEN rate_per_mt ELSE 0 END) as rate_sum", [startOfRange, endOfRange])
       ).first(),
 
@@ -97,6 +96,8 @@ export async function GET(request: Request) {
         db.raw("COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending_count"),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN total_weight ELSE 0 END) as stock_in_sum", [startOfRange, endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND created_at >= ? AND created_at <= ? THEN total_weight ELSE 0 END) as stock_out_sum", [startOfRange, endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at <= ? THEN total_weight ELSE 0 END) as lifetime_stock_in_sum", [endOfRange]),
+        db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'OUT' AND created_at <= ? THEN total_weight ELSE 0 END) as lifetime_stock_out_sum", [endOfRange]),
         db.raw("SUM(CASE WHEN status = 'APPROVED' AND entry_type = 'IN' AND created_at >= ? AND created_at <= ? THEN price_per_unit ELSE 0 END) as rate_sum", [startOfRange, endOfRange])
       ).first(),
 
@@ -180,12 +181,56 @@ export async function GET(request: Request) {
           'farmers.village as farmer_village'
         )
         .orderBy('weighbridge_slips.created_at', 'desc')
-        .limit(5)
+        .limit(5),
+
+      // J. Lifetime Splits In WB
+      applyFilters(
+        db('weighbridge_slips')
+          .where('branch_id', branchId)
+          .where('status', 'APPROVED')
+          .where('entry_type', 'IN')
+          .where('is_internal', true)
+          .where('created_at', '<=', endOfRange)
+      ).select(`${groupByField} as name`).sum('net_weight as value').groupBy(groupByField),
+
+      // K. Lifetime Splits In SS
+      applyFilters(
+        db('small_scale_entries')
+          .where('branch_id', branchId)
+          .where('status', 'APPROVED')
+          .where('entry_type', 'IN')
+          .where('created_at', '<=', endOfRange),
+        false
+      ).select(`${groupByField} as name`).sum('total_weight as value').groupBy(groupByField),
+
+      // L. Lifetime Splits Out WB
+      applyFilters(
+        db('weighbridge_slips')
+          .where('branch_id', branchId)
+          .where('status', 'APPROVED')
+          .where('entry_type', 'OUT')
+          .where('is_internal', true)
+          .where('created_at', '<=', endOfRange)
+      ).select(`${groupByField} as name`).sum('net_weight as value').groupBy(groupByField),
+
+      // M. Lifetime Splits Out SS
+      applyFilters(
+        db('small_scale_entries')
+          .where('branch_id', branchId)
+          .where('status', 'APPROVED')
+          .where('entry_type', 'OUT')
+          .where('created_at', '<=', endOfRange),
+        false
+      ).select(`${groupByField} as name`).sum('total_weight as value').groupBy(groupByField)
     ]);
 
     const totalInWeight = (parseFloat(wbKpis?.stock_in_sum as string || '0') + parseFloat(ssKpis?.stock_in_sum as string || '0')) / 100;
     const totalOutWeight = (parseFloat(wbKpis?.stock_out_sum as string || '0') + parseFloat(ssKpis?.stock_out_sum as string || '0')) / 100;
     const totalStock = totalInWeight - totalOutWeight;
+
+    const lifetimeInWeight = (parseFloat(wbKpis?.lifetime_stock_in_sum as string || '0') + parseFloat(ssKpis?.lifetime_stock_in_sum as string || '0')) / 100;
+    const lifetimeOutWeight = (parseFloat(wbKpis?.lifetime_stock_out_sum as string || '0') + parseFloat(ssKpis?.lifetime_stock_out_sum as string || '0')) / 100;
+    const lifetimeStock = lifetimeInWeight - lifetimeOutWeight;
 
     const totalPurchaseAmount = (parseFloat(wbKpis?.today_purchase_sum as string || '0')) + (parseFloat(ssKpis?.today_purchase_sum as string || '0'));
     const avgPurchaseRate = totalInWeight > 0 ? (totalPurchaseAmount / totalInWeight) : 0;
@@ -215,7 +260,6 @@ export async function GET(request: Request) {
       });
     }
 
-    // Merge entities
     const allNames = new Set([
       ...splitInWb.map((c: any) => c.name),
       ...splitInSs.map((c: any) => c.name),
@@ -229,6 +273,23 @@ export async function GET(request: Request) {
       const ssIn = parseFloat(splitInSs.find((c: any) => c.name === name)?.value || '0');
       const wbOut = parseFloat(splitOutWb.find((c: any) => c.name === name)?.value || '0');
       const ssOut = parseFloat(splitOutSs.find((c: any) => c.name === name)?.value || '0');
+      const val = (wbIn + ssIn - wbOut - ssOut) / 100;
+      return { name, value: val > 0 ? val : 0 };
+    }).filter((item: any) => item && item.value > 0);
+
+    const lifetimeNames = new Set([
+      ...lifetimeSplitInWb.map((c: any) => c.name),
+      ...lifetimeSplitInSs.map((c: any) => c.name),
+      ...lifetimeSplitOutWb.map((c: any) => c.name),
+      ...lifetimeSplitOutSs.map((c: any) => c.name)
+    ]);
+
+    const lifetimeCategorySplit = Array.from(lifetimeNames).map((name: any) => {
+      if (!name) return null;
+      const wbIn = parseFloat(lifetimeSplitInWb.find((c: any) => c.name === name)?.value || '0');
+      const ssIn = parseFloat(lifetimeSplitInSs.find((c: any) => c.name === name)?.value || '0');
+      const wbOut = parseFloat(lifetimeSplitOutWb.find((c: any) => c.name === name)?.value || '0');
+      const ssOut = parseFloat(lifetimeSplitOutSs.find((c: any) => c.name === name)?.value || '0');
       const val = (wbIn + ssIn - wbOut - ssOut) / 100;
       return { name, value: val > 0 ? val : 0 };
     }).filter((item: any) => item && item.value > 0);
@@ -254,27 +315,34 @@ export async function GET(request: Request) {
       };
     }).filter(Boolean);
 
+    const purchaseSplit = Array.from(allNames).map((name: any) => {
+      if (!name) return null;
+      const wbAmountSum = parseFloat(splitInWb.find((c: any) => c.name === name)?.amount_sum || '0');
+      const ssAmountSum = parseFloat(splitInSs.find((c: any) => c.name === name)?.amount_sum || '0');
+      
+      const totalAmount = wbAmountSum + ssAmountSum;
+      return { name, value: totalAmount };
+    }).filter((item: any) => item && item.value > 0);
+
     const responseData = {
       kpis: {
         todayPurchase: parseFloat(wbKpis?.today_purchase_sum as string || '0') + parseFloat(ssKpis?.today_purchase_sum as string || '0'),
         todayVehicles: parseInt(wbKpis?.today_vehicles_count as string || '0'),
         pendingSlips: parseInt(wbKpis?.pending_count as string || '0') + parseInt(ssKpis?.pending_count as string || '0'),
         totalStock: totalStock,
+        lifetimeStock,
         todayWeight: totalInWeight,
         avgPurchaseRate
       },
       trendData,
       avgRateTrend,
       categorySplit,
+      lifetimeCategorySplit,
       sourceSplit,
       avgRateSplit,
+      purchaseSplit,
       recentSlips
     };
-
-    analyticsCache.set(cacheKey, {
-      data: responseData,
-      timestamp: now
-    });
 
     return NextResponse.json(responseData);
   } catch (error: any) {

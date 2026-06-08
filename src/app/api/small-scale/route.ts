@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { analyticsCache } from '@/lib/analytics-cache';
+import { verifyToken } from '@/lib/auth-utils';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get('branchId');
@@ -12,6 +13,17 @@ export async function GET(request: Request) {
     const category = searchParams.get('category');
     const subcategory = searchParams.get('subcategory');
     const status = searchParams.get('status');
+
+    // SECURITY FIX: Enforce Tenant Boundaries (Cross-Tenant IDOR)
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (payload.role !== 'superadmin' && branchId && payload.branchId !== branchId) {
+      return NextResponse.json({ error: 'Forbidden: You cannot view small scale entries for other branches' }, { status: 403 });
+    }
 
     let query = db('small_scale_entries')
       .orderBy('created_at', 'desc');
@@ -31,7 +43,10 @@ export async function GET(request: Request) {
       query = query.where('created_at', '<=', `${endDate} 23:59:59`);
     }
     if (slipNo) {
-      query = query.where('id', slipNo);
+      const cleanSlipNo = slipNo.replace(/[^0-9]/g, '');
+      if (cleanSlipNo) {
+        query = query.whereRaw('id::text ILIKE ?', [`%${cleanSlipNo}%`]);
+      }
     }
     if (category) {
       query = query.where('grain_category', category);
@@ -47,7 +62,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { 
@@ -69,6 +84,17 @@ export async function POST(request: Request) {
       pricePerUnit,
       totalAmount
     } = body;
+
+    // SECURITY FIX: Prevent Cross-Tenant Stock Injection
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (payload.role !== 'superadmin' && payload.branchId !== branchId) {
+      return NextResponse.json({ error: 'Forbidden: Cannot create stock entries for other branches' }, { status: 403 });
+    }
 
     const [newEntry] = await db('small_scale_entries').insert({
       branch_id: branchId,

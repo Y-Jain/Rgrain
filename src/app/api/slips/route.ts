@@ -39,6 +39,8 @@ export async function GET(request: Request) {
         'farmers.name as farmer_name',
         'farmers.mobile as farmer_mobile',
         'farmers.village as farmer_village',
+        'weighbridge_slips.tollkata_charges as tollkata_charges',
+        'weighbridge_slips.serial_number as serial_number',
         db.raw("'Weighbridge' as scale_type")
       );
 
@@ -60,6 +62,8 @@ export async function GET(request: Request) {
         db.raw("coalesce(party_name, 'Cash/General') as farmer_name"),
         db.raw("coalesce(party_mobile, '-') as farmer_mobile"),
         db.raw("coalesce(address, '-') as farmer_village"),
+        db.raw("0 as tollkata_charges"),
+        db.raw("null as serial_number"),
         db.raw("'Small Scale' as scale_type")
       );
 
@@ -186,20 +190,13 @@ export async function POST(request: Request) {
     const { 
       farmerName, 
       farmerMobile, 
-      vehicleNumber, 
-      driverName, 
-      grainType, 
-      grossWeight, 
-      tareWeight, 
-      netWeight, 
-      rate, 
-      totalAmount,
       address,
-      isInternal,
       entryType,
       branchId,
-      createdById
+      createdById,
+      trollies // Array of trolley objects
     } = body;
+
 
     // 1. Find or create farmer/customer
     let farmer = await db('farmers').where('mobile', farmerMobile).first();
@@ -207,6 +204,7 @@ export async function POST(request: Request) {
       const [newFarmer] = await db('farmers').insert({
         name: farmerName || (entryType === 'IN' ? 'Unknown Farmer' : 'Unknown Customer'),
         mobile: farmerMobile || `NA-${Date.now()}`,
+        village: address || null,
       }).returning('*');
       farmer = newFarmer;
     }
@@ -231,58 +229,80 @@ export async function POST(request: Request) {
         .where({ id: settings.id })
         .update({ current_serial_number: serialToUse, updated_at: trx.fn.now() });
 
-      const slipNo = `SLIP-${serialToUse.toString().padStart(6, '0')}`;
+      const insertedSlips = [];
 
-      // 3. Stock Validation for Internal OUT
-      if (entryType === 'OUT' && isInternal) {
-        const stockIn = await trx('weighbridge_slips')
-          .where({ branch_id: branchId, grain_category: grainType, status: 'APPROVED', entry_type: 'IN', is_internal: true })
-          .sum('net_weight as sum')
-          .first();
-        
-        const stockOut = await trx('weighbridge_slips')
-          .where({ branch_id: branchId, grain_category: grainType, status: 'APPROVED', entry_type: 'OUT', is_internal: true })
-          .sum('net_weight as sum')
-          .first();
-        
-        const available = (parseFloat(stockIn?.sum as string || '0')) - (parseFloat(stockOut?.sum as string || '0'));
-        
-        if (parseFloat(netWeight) > available) {
-          throw new Error(`Insufficient internal stock. Available: ${(available/1000).toFixed(3)} MT`);
+      for (let i = 0; i < trollies.length; i++) {
+        const trolly = trollies[i];
+        const slipNo = trollies.length > 1 
+          ? `SLIP-${serialToUse.toString().padStart(6, '0')}-${i+1}`
+          : `SLIP-${serialToUse.toString().padStart(6, '0')}`;
+
+        // 3. Stock Validation for Internal OUT
+        if (entryType === 'OUT' && trolly.isInternal) {
+          const stockIn = await trx('weighbridge_slips')
+            .where({ branch_id: branchId, grain_category: trolly.grainType, status: 'APPROVED', entry_type: 'IN', is_internal: true })
+            .sum('net_weight as sum')
+            .first();
+          
+          const stockOut = await trx('weighbridge_slips')
+            .where({ branch_id: branchId, grain_category: trolly.grainType, status: 'APPROVED', entry_type: 'OUT', is_internal: true })
+            .sum('net_weight as sum')
+            .first();
+
+          const ssStockIn = await trx('small_scale_entries')
+            .where({ branch_id: branchId, grain_category: trolly.grainType, status: 'APPROVED', entry_type: 'IN' })
+            .sum('total_weight as sum')
+            .first();
+
+          const ssStockOut = await trx('small_scale_entries')
+            .where({ branch_id: branchId, grain_category: trolly.grainType, status: 'APPROVED', entry_type: 'OUT' })
+            .sum('total_weight as sum')
+            .first();
+          
+          const availableWb = (parseFloat(stockIn?.sum as string || '0')) - (parseFloat(stockOut?.sum as string || '0'));
+          const availableSs = (parseFloat(ssStockIn?.sum as string || '0')) - (parseFloat(ssStockOut?.sum as string || '0'));
+          const available = availableWb + availableSs;
+          
+          if (parseFloat(trolly.netWeight) > available) {
+            throw new Error(`Insufficient internal stock for ${trolly.grainType}. Available: ${(available/100).toFixed(3)} Qtl`);
+          }
         }
+
+        // 4. Insert slip
+        const [insertedSlip] = await trx('weighbridge_slips').insert({
+          slip_no: slipNo,
+          serial_number: serialToUse,
+          farmer_id: farmer.id,
+          vehicle_no: trolly.vehicleNumber || 'N/A',
+          driver_name: trolly.driverName,
+          grain_category: trolly.grainType,
+          subcategory: trolly.subcategory,
+          vehicle_type: trolly.vehicleType || null,
+          tollkata_charges: parseFloat(trolly.tollkataCharges) || 0,
+          gross_weight: parseFloat(trolly.grossWeight) || 0,
+          tare_weight: parseFloat(trolly.tareWeight) || 0,
+          net_weight: parseFloat(trolly.netWeight) || 0,
+          rate_per_mt: parseFloat(trolly.rate) || 0,
+          payable_amount: parseFloat(trolly.totalAmount) || 0,
+          is_internal: trolly.isInternal || false,
+          entry_type: entryType || 'IN',
+          status: 'PENDING',
+          address: address,
+          branch_id: branchId,
+          created_by: createdById
+        }).returning('*');
+
+        insertedSlips.push(insertedSlip);
       }
 
-      // 4. Insert slip
-      const [insertedSlip] = await trx('weighbridge_slips').insert({
-        slip_no: slipNo,
-        serial_number: serialToUse,
-        farmer_id: farmer.id,
-        vehicle_no: vehicleNumber,
-        driver_name: driverName,
-        grain_category: grainType,
-        subcategory: body.subcategory,
-        vehicle_type: body.vehicleType,
-        tollkata_charges: parseFloat(body.tollkataCharges) || 0,
-        gross_weight: parseFloat(grossWeight) || 0,
-        tare_weight: parseFloat(tareWeight) || 0,
-        net_weight: parseFloat(netWeight) || 0,
-        rate_per_mt: parseFloat(rate) || 0,
-        payable_amount: parseFloat(totalAmount) || 0,
-        is_internal: isInternal || false,
-        entry_type: entryType || 'IN',
-        status: 'PENDING',
-        address: address,
-        branch_id: branchId,
-        created_by: createdById
-      }).returning('*');
-
-      return insertedSlip;
+      return insertedSlips;
     });
 
     const slipWithFarmer = {
-      ...newSlip,
+      ...newSlip[0], // We can just return the first one as representative for immediate UI logic, OR return all. Let's return all, and add items array.
       farmer_name: farmer.name,
-      farmer_mobile: farmer.mobile
+      farmer_mobile: farmer.mobile,
+      items: newSlip // Attach all trollies to the first slip so the Modal can print them as a table
     };
 
     analyticsCache.clear();

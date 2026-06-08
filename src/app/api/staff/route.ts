@@ -1,11 +1,23 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { hashPassword, sanitizeInput } from '@/lib/security';
+import { verifyToken } from '@/lib/auth-utils';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get('branchId');
+
+    // SECURITY FIX: Enforce Tenant Boundaries
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (payload.role !== 'superadmin' && branchId && payload.branchId !== branchId) {
+      return NextResponse.json({ error: 'Forbidden: Cannot view staff of other branches' }, { status: 403 });
+    }
 
     let query = db('users').where('role', 'staff');
     if (branchId) {
@@ -19,8 +31,17 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // SECURITY FIX: Enforce Superadmin RBAC for Staff Creation
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload || (payload.role !== 'admin' && payload.role !== 'superadmin')) {
+      return NextResponse.json({ error: 'Forbidden: Only admins and superadmins can create staff accounts' }, { status: 403 });
+    }
+
     const body = await request.json();
     const name = sanitizeInput(body.name);
     const email = body.email ? sanitizeInput(body.email) : null;
@@ -66,8 +87,17 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
+    // SECURITY FIX: Enforce Superadmin RBAC for Staff Modification
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload || (payload.role !== 'admin' && payload.role !== 'superadmin')) {
+      return NextResponse.json({ error: 'Forbidden: Only admins and superadmins can modify staff accounts' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { id, name, email, mobile, password, role_template, is_active } = body;
 
@@ -125,8 +155,17 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
+    // SECURITY FIX: Enforce Superadmin RBAC for Staff Deletion
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload || (payload.role !== 'admin' && payload.role !== 'superadmin')) {
+      return NextResponse.json({ error: 'Forbidden: Only admins and superadmins can delete staff accounts' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
