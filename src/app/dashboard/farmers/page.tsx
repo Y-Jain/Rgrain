@@ -21,12 +21,16 @@ import {
   Trash
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store/auth-store";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
 function FarmersPageInner() {
   const { user } = useAuthStore();
+  const searchParams = useSearchParams();
+  const overrideBranchId = searchParams.get('branchId');
+  const effectiveBranchId = overrideBranchId || (user?.role !== 'superadmin' ? user?.branchId : null);
   const canEdit = user?.role === 'admin' || user?.role === 'superadmin';
   const [farmers, setFarmers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +68,16 @@ function FarmersPageInner() {
   const fetchFarmers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/farmers?page=${currentPage}&limit=${itemsPerPage}&search=${encodeURIComponent(debouncedSearch)}`);
+      const url = new URL('/api/farmers', window.location.origin);
+      url.searchParams.append('page', currentPage.toString());
+      url.searchParams.append('limit', itemsPerPage.toString());
+      if (debouncedSearch) {
+        url.searchParams.append('search', debouncedSearch);
+      }
+      if (effectiveBranchId) {
+        url.searchParams.append('branchId', effectiveBranchId);
+      }
+      const res = await fetch(url.toString());
       const result = await res.json();
       if (result && Array.isArray(result.data)) {
         setFarmers(result.data);
@@ -92,7 +105,16 @@ function FarmersPageInner() {
 
   const exportToExcel = async () => {
     try {
-      const res = await fetch(`/api/farmers?page=1&limit=1000000&search=${encodeURIComponent(debouncedSearch)}`);
+      const url = new URL('/api/farmers', window.location.origin);
+      url.searchParams.append('page', '1');
+      url.searchParams.append('limit', '1000000');
+      if (debouncedSearch) {
+        url.searchParams.append('search', debouncedSearch);
+      }
+      if (effectiveBranchId) {
+        url.searchParams.append('branchId', effectiveBranchId);
+      }
+      const res = await fetch(url.toString());
       const result = await res.json();
       
       if (result && Array.isArray(result.data)) {
@@ -154,7 +176,8 @@ function FarmersPageInner() {
           village: newFarmer.village,
           district: newFarmer.district,
           state: newFarmer.state,
-          aadhaar_no: newFarmer.aadhaar
+          aadhaar_no: newFarmer.aadhaar,
+          branchId: effectiveBranchId
         })
       });
       const data = await res.json();

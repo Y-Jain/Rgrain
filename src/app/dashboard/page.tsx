@@ -77,12 +77,14 @@ export default function DashboardPage() {
     setEndDate(todayStr);
   };
 
-  const fetchCategories = async () => {
+  const fetchCategories = async (branchId?: string) => {
     try {
-      const res = await fetch('/api/rates');
+      const url = branchId ? `/api/rates?branchId=${branchId}` : '/api/rates';
+      const res = await fetch(url);
       const rates = await res.json();
       if (Array.isArray(rates)) {
-        setCategories(rates);
+        const uniqueRates = Array.from(new Map(rates.map((item: any) => [item.category_name, item])).values());
+        setCategories(uniqueRates);
       } else {
         console.error("Rates API returned non-array:", rates);
         setCategories([]);
@@ -93,8 +95,11 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchCategories();
-  }, []);
+    if (user !== undefined) {
+      const effectiveBranchId = overrideBranchId || (user?.role !== 'superadmin' ? user?.branchId : null);
+      fetchCategories(effectiveBranchId || undefined);
+    }
+  }, [user, overrideBranchId]);
 
   useEffect(() => {
     if (user?.role === 'staff') {
