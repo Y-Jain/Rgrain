@@ -15,24 +15,32 @@ import {
   X,
   User,
   Loader2,
-  Filter
+  Filter,
+  Download,
+  Edit,
+  Trash
 } from "lucide-react";
+import { useAuthStore } from "@/lib/store/auth-store";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 function FarmersPageInner() {
+  const { user } = useAuthStore();
+  const canEdit = user?.role === 'admin' || user?.role === 'superadmin';
   const [farmers, setFarmers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [editingFarmerId, setEditingFarmerId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [newFarmer, setNewFarmer] = useState({
     name: "",
     mobile: "",
     village: "",
-    district: "Karnal",
-    state: "Haryana",
+    district: "",
+    state: "",
     aadhaar: ""
   });
 
@@ -82,14 +90,41 @@ function FarmersPageInner() {
   // We now receive already filtered/paginated farmers from the server
   const paginatedFarmers = farmers;
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFarmer.name || !newFarmer.mobile) {
-      toast.error("Name and mobile are required.");
-      return;
+  const exportToExcel = async () => {
+    try {
+      const res = await fetch(`/api/farmers?page=1&limit=1000000&search=${encodeURIComponent(debouncedSearch)}`);
+      const result = await res.json();
+      
+      if (result && Array.isArray(result.data)) {
+        const dataToExport = result.data.map((f: any) => ({
+          'ID': f.id.split('-')[0],
+          'Name': f.name,
+          'Mobile': f.mobile || 'N/A',
+          'Aadhaar': f.aadhaar_no || 'Pending',
+          'Village': f.village,
+          'District': f.district,
+          'State': f.state,
+          'Credit Score': f.credit_score,
+          'Registered On': new Date(f.created_at).toLocaleDateString()
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Farmers");
+        XLSX.writeFile(wb, `Farmers_Directory_${new Date().toISOString().split('T')[0]}.xlsx`);
+        toast.success("Excel downloaded successfully.");
+      } else {
+        toast.error("Failed to fetch data for export.");
+      }
+    } catch (error) {
+      toast.error("Error exporting to Excel.");
     }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
     
-    if (newFarmer.mobile.trim()) {
+    if (newFarmer.mobile?.trim() && !newFarmer.mobile.startsWith('NA')) {
       const rawMobile = newFarmer.mobile.trim();
       const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
       let cleaned = digitsOnly;
@@ -107,8 +142,11 @@ function FarmersPageInner() {
     
     setSubmitting(true);
     try {
-      const res = await fetch('/api/farmers', {
-        method: 'POST',
+      const url = editingFarmerId ? `/api/farmers/${editingFarmerId}` : '/api/farmers';
+      const method = editingFarmerId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newFarmer.name,
@@ -122,15 +160,42 @@ function FarmersPageInner() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      toast.success(`${newFarmer.name} registered successfully!`);
+      toast.success(`${newFarmer.name} ${editingFarmerId ? 'updated' : 'registered'} successfully!`);
       setShowRegisterModal(false);
-      setNewFarmer({ name: "", mobile: "", village: "", district: "Karnal", state: "Haryana", aadhaar: "" });
+      setEditingFarmerId(null);
+      setNewFarmer({ name: "", mobile: "", village: "", district: "", state: "", aadhaar: "" });
       fetchFarmers();
     } catch (error: any) {
-      toast.error("Registration failed: " + error.message);
+      toast.error((editingFarmerId ? "Update failed: " : "Registration failed: ") + error.message);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+    try {
+      const res = await fetch(`/api/farmers/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      toast.success(`${name} deleted successfully`);
+      fetchFarmers();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const openEditModal = (farmer: any) => {
+    setEditingFarmerId(farmer.id);
+    setNewFarmer({
+      name: farmer.name || "",
+      mobile: farmer.mobile || "",
+      village: farmer.village || "",
+      district: farmer.district || "",
+      state: farmer.state || "",
+      aadhaar: farmer.aadhaar_no || ""
+    });
+    setShowRegisterModal(true);
   };
 
   return (
@@ -140,13 +205,22 @@ function FarmersPageInner() {
           <h1 className="text-3xl font-bold tracking-tight font-outfit">Farmers Directory</h1>
           <p className="text-muted-foreground">Manage farmer profiles, KYC documents, and credit history.</p>
         </div>
-        <button 
-          onClick={() => setShowRegisterModal(true)}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/20"
-        >
-          <UserPlus className="w-4 h-4" />
-          Register New Farmer
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={exportToExcel}
+            className="inline-flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-900/20"
+          >
+            <Download className="w-4 h-4" />
+            Export Excel
+          </button>
+          <button 
+            onClick={() => setShowRegisterModal(true)}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/20"
+          >
+            <UserPlus className="w-4 h-4" />
+            Register New Farmer
+          </button>
+        </div>
       </div>
 
       <Card className="border-none shadow-sm">
@@ -215,7 +289,7 @@ function FarmersPageInner() {
                            <td className="py-4 px-6">
                               <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
                                  <MapPin className="w-3.5 h-3.5" />
-                                 {farmer.village}, {farmer.district}
+                                 {[farmer.village, farmer.district].filter(Boolean).join(', ') || 'N/A'}
                               </div>
                            </td>
                            <td className="py-4 px-6">
@@ -227,9 +301,20 @@ function FarmersPageInner() {
                               </div>
                            </td>
                            <td className="py-4 px-6 text-right">
-                              <button className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-slate-900 transition-all">
-                                 <MoreVertical className="w-4 h-4" />
-                              </button>
+                              {canEdit ? (
+                                 <div className="flex items-center justify-end gap-1">
+                                    <button onClick={() => openEditModal(farmer)} className="p-2 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Edit">
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => handleDelete(farmer.id, farmer.name)} className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all" title="Delete">
+                                      <Trash className="w-4 h-4" />
+                                    </button>
+                                 </div>
+                              ) : (
+                                 <button className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-slate-900 transition-all">
+                                    <MoreVertical className="w-4 h-4" />
+                                 </button>
+                              )}
                            </td>
                         </tr>
                       ))}
@@ -277,22 +362,22 @@ function FarmersPageInner() {
                     <UserPlus className="w-6 h-6" />
                  </div>
                  <div>
-                    <h3 className="text-xl font-black text-slate-900 font-outfit">Farmer Registration</h3>
-                    <p className="text-xs text-muted-foreground">Onboard a new farmer to the branch database.</p>
+                    <h3 className="text-xl font-black text-slate-900 font-outfit">{editingFarmerId ? "Edit Farmer Profile" : "Farmer Registration"}</h3>
+                    <p className="text-xs text-muted-foreground">{editingFarmerId ? "Update farmer details and KYC." : "Onboard a new farmer to the branch database."}</p>
                  </div>
               </div>
-              <button onClick={() => setShowRegisterModal(false)} className="p-2 hover:bg-muted rounded-xl transition-all">
+              <button aria-label="Close Modal" onClick={() => { setShowRegisterModal(false); setEditingFarmerId(null); setNewFarmer({ name: "", mobile: "", village: "", district: "", state: "", aadhaar: "" }); }} className="p-2 hover:bg-muted rounded-xl transition-all">
                  <X className="w-6 h-6 text-muted-foreground" />
               </button>
             </div>
             
-            <form onSubmit={handleRegister} className="p-8 space-y-6">
+            <form onSubmit={handleSave} className="p-8 space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Full Name</label>
+                     <label htmlFor="farmerName" className="text-xs font-bold text-muted-foreground uppercase">Full Name</label>
                      <input 
+                        id="farmerName"
                         type="text" 
-                        required
                         className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="e.g. Baldev Singh"
                         value={newFarmer.name}
@@ -300,10 +385,10 @@ function FarmersPageInner() {
                      />
                   </div>
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Mobile Number</label>
+                     <label htmlFor="farmerMobile" className="text-xs font-bold text-muted-foreground uppercase">Mobile Number</label>
                      <input 
+                        id="farmerMobile"
                         type="tel" 
-                        required
                         className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="10-digit mobile"
                         value={newFarmer.mobile}
@@ -312,10 +397,11 @@ function FarmersPageInner() {
                   </div>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="grid grid-cols-1 gap-6">
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Village / Area</label>
+                     <label htmlFor="farmerVillage" className="text-xs font-bold text-muted-foreground uppercase">Village / Area</label>
                      <input 
+                        id="farmerVillage"
                         type="text" 
                         className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="e.g. Rampur"
@@ -323,22 +409,12 @@ function FarmersPageInner() {
                         onChange={e => setNewFarmer({...newFarmer, village: e.target.value})}
                      />
                   </div>
-                  <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Aadhaar Number</label>
-                     <input 
-                        type="text" 
-                        className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                        placeholder="12-digit UID"
-                        value={newFarmer.aadhaar}
-                        onChange={e => setNewFarmer({...newFarmer, aadhaar: e.target.value})}
-                     />
-                  </div>
                </div>
 
                <div className="pt-4 flex gap-4">
-                  <button type="button" onClick={() => setShowRegisterModal(false)} className="flex-1 py-4 text-sm font-bold text-muted-foreground">Cancel</button>
+                  <button type="button" onClick={() => { setShowRegisterModal(false); setEditingFarmerId(null); setNewFarmer({ name: "", mobile: "", village: "", district: "", state: "", aadhaar: "" }); }} className="flex-1 py-4 text-sm font-bold text-muted-foreground">Cancel</button>
                   <button type="submit" disabled={submitting} className="flex-[2] py-4 bg-primary text-primary-foreground rounded-2xl font-black uppercase tracking-widest text-xs hover:opacity-90 shadow-xl shadow-primary/20 disabled:opacity-50">
-                    {submitting ? "Registering..." : "Complete Registration"}
+                    {submitting ? (editingFarmerId ? "Updating..." : "Registering...") : (editingFarmerId ? "Save Changes" : "Complete Registration")}
                   </button>
                </div>
             </form>

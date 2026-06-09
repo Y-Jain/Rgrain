@@ -81,16 +81,21 @@ export default function WeighbridgePage() {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [globalTotals, setGlobalTotals] = useState({ totalWeight: 0, totalAmount: 0 });
+  const [globalTotals, setGlobalTotals] = useState({ totalWeight: 0, totalAmount: 0, totalCharges: 0 });
   
   const [formData, setFormData] = useState({
     farmerName: "",
     farmerMobile: "",
+    address: "",
+    serialNumber: ""
+  });
+
+  const [trollies, setTrollies] = useState([{
+    id: "1",
     vehicleNumber: "",
     driverName: "",
     grainType: "",
     subcategory: "",
-    address: "",
     vehicleType: "",
     grossWeight: "",
     tareWeight: "",
@@ -98,9 +103,8 @@ export default function WeighbridgePage() {
     rate: 0,
     totalAmount: 0,
     tollkataCharges: 0,
-    isInternal: false,
-    serialNumber: ""
-  });
+    isInternal: true
+  }]);
 
   const fetchRates = async () => {
     if (!user?.branchId) return;
@@ -185,7 +189,7 @@ export default function WeighbridgePage() {
         setSlips(data.data || []);
         setTotalCount(data.totalCount || 0);
         setTotalPages(data.totalPages || 1);
-        setGlobalTotals(data.totals || { totalWeight: 0, totalAmount: 0 });
+        setGlobalTotals(data.totals || { totalWeight: 0, totalAmount: 0, totalCharges: 0 });
         return data.data;
       }
     } catch (error) {
@@ -223,85 +227,104 @@ export default function WeighbridgePage() {
     activeTab
   ]);
 
-  const subcategories = useMemo(() => {
-    const category = availableRates.find(r => r.category_name === formData.grainType);
+  const getSubcategories = (grainType: string) => {
+    const category = availableRates.find(r => r.category_name === grainType);
     return category?.subcategories || [];
-  }, [formData.grainType, availableRates]);
-
-  const handleWeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    const newFormData = { ...formData, [name]: value };
-    
-    const gross = parseFloat(newFormData.grossWeight) || 0;
-    const tare = parseFloat(newFormData.tareWeight) || 0;
-    const net = Math.abs(gross - tare);
-    
-    newFormData.netWeight = net;
-    newFormData.totalAmount = (net / 100) * (parseFloat(newFormData.rate as any) || 0);
-    
-    setFormData(newFormData);
   };
 
-  const handleRateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    const net = formData.netWeight;
+  const handleTrollyChange = (index: number, field: string, value: any) => {
+    const newTrollies = [...trollies];
+    newTrollies[index] = { ...newTrollies[index], [field]: value };
+    setTrollies(newTrollies);
+  };
+
+  const handleNetWeightChange = (index: number, value: string) => {
+    const netQuintal = parseFloat(value) || 0;
+    const netKg = netQuintal * 100;
+    const newTrollies = [...trollies];
+    newTrollies[index] = {
+      ...newTrollies[index],
+      netWeight: netKg,
+      grossWeight: netKg.toString(),
+      tareWeight: "0",
+      totalAmount: netQuintal * (parseFloat(newTrollies[index].rate as any) || 0)
+    };
+    setTrollies(newTrollies);
+  };
+
+  const handleRateChange = (index: number, val: string) => {
+    const net = trollies[index].netWeight;
     const rateVal = parseFloat(val) || 0;
     const total = (net / 100) * rateVal;
     
-    setFormData({
-      ...formData,
+    const newTrollies = [...trollies];
+    newTrollies[index] = {
+      ...newTrollies[index],
       rate: val as any,
       totalAmount: total,
-      isInternal: rateVal > 0 ? true : formData.isInternal
-    });
+      isInternal: true
+    };
+    setTrollies(newTrollies);
   };
 
-  const handleGrainChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const category = availableRates.find(c => c.id === e.target.value);
+  const handleGrainChange = (index: number, categoryId: string) => {
+    const category = availableRates.find(c => c.id === categoryId);
     if (category) {
-      const net = formData.netWeight;
+      const newTrollies = [...trollies];
+      const net = newTrollies[index].netWeight;
       const rate = entryType === 'IN' ? category.procurement_rate : category.selling_rate;
-      setFormData({
-        ...formData,
+      newTrollies[index] = {
+        ...newTrollies[index],
         grainType: category.category_name,
         subcategory: "", // Reset subcategory
         rate: rate,
         totalAmount: (net / 100) * rate
-      });
+      };
+      setTrollies(newTrollies);
     }
   };
 
-  const handleVehicleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const type = e.target.value;
+  const handleVehicleTypeChange = (index: number, type: string) => {
     const rateObj = vehicleRates.find(r => r.vehicle_type === type);
-    setFormData(prev => ({
-      ...prev,
+    const newTrollies = [...trollies];
+    newTrollies[index] = {
+      ...newTrollies[index],
       vehicleType: type,
-      tollkataCharges: rateObj ? rateObj.rate : 0
-    }));
+      tollkataCharges: rateObj ? (parseFloat(rateObj.rate as any) || 0) : 0
+    };
+    setTrollies(newTrollies);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (step === 1) {
-      if (formData.farmerMobile.trim()) {
-        const rawMobile = formData.farmerMobile.trim();
-        const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
-        let cleaned = digitsOnly;
-        if (cleaned.length === 12 && cleaned.startsWith('91')) {
-          cleaned = cleaned.substring(2);
-        } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
-          cleaned = cleaned.substring(1);
-        }
-        const phoneRegex = /^[6-9]\d{9}$/;
-        if (!phoneRegex.test(cleaned)) {
-          toast.error("Please enter a valid 10-digit mobile number.");
-          return;
-        }
+    if (formData.farmerMobile.trim()) {
+      const rawMobile = formData.farmerMobile.trim();
+      const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
+      let cleaned = digitsOnly;
+      if (cleaned.length === 12 && cleaned.startsWith('91')) {
+        cleaned = cleaned.substring(2);
+      } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+        cleaned = cleaned.substring(1);
       }
-      setStep(2);
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (!phoneRegex.test(cleaned)) {
+        toast.error("Please enter a valid 10-digit mobile number.");
+        return;
+      }
+    }
+
+    if (trollies.length === 0) {
+      toast.error("Please add at least one trolly.");
       return;
+    }
+
+    for (let i = 0; i < trollies.length; i++) {
+      const trolly = trollies[i];
+      if (!trolly.grainType || trolly.netWeight <= 0) {
+        toast.error(`Please fill in Grain Type and Weight for Trolly #${i + 1}`);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -311,6 +334,7 @@ export default function WeighbridgePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          trollies,
           entryType,
           branchId: user?.branchId,
           createdById: user?.id
@@ -320,7 +344,7 @@ export default function WeighbridgePage() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      toast.success("Slip generated successfully!");
+      toast.success("Slips generated successfully!");
       
       setSelectedSlip(data);
       setIsModalOpen(true);
@@ -329,11 +353,15 @@ export default function WeighbridgePage() {
       setFormData({
         farmerName: "",
         farmerMobile: "",
+        address: "",
+        serialNumber: ""
+      });
+      setTrollies([{
+        id: Date.now().toString(),
         vehicleNumber: "",
         driverName: "",
         grainType: "",
         subcategory: "",
-        address: "",
         vehicleType: "",
         grossWeight: "",
         tareWeight: "",
@@ -341,9 +369,8 @@ export default function WeighbridgePage() {
         rate: 0,
         totalAmount: 0,
         tollkataCharges: 0,
-        isInternal: false,
-        serialNumber: ""
-      });
+        isInternal: true
+      }]);
       fetchSlips();
       fetchSettings(); // Update serial number
     } catch (error: any) {
@@ -385,7 +412,7 @@ export default function WeighbridgePage() {
   const totals = useMemo(() => {
     const totalWeight = globalTotals.totalWeight || 0;
     const totalAmount = globalTotals.totalAmount || 0;
-    const totalCharges = slips.reduce((sum, s) => sum + (parseFloat(s.tollkata_charges) || 0), 0);
+    const totalCharges = globalTotals.totalCharges || 0;
     const totalQtl = totalWeight / 100;
     const avgRate = totalQtl > 0 ? totalAmount / totalQtl : 0;
 
@@ -593,7 +620,7 @@ export default function WeighbridgePage() {
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `Jashoda_Slips_${new Date().toISOString().split('T')[0]}.xlsx`;
+    anchor.download = `Weight_Slips_${new Date().toISOString().split('T')[0]}.xlsx`;
     anchor.click();
     window.URL.revokeObjectURL(url);
   };
@@ -659,7 +686,7 @@ export default function WeighbridgePage() {
       {activeTab === 'form' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Main Form */}
-          <div className="lg:col-span-8 space-y-8">
+          <div className="lg:col-span-12 max-w-full mx-auto w-full space-y-8">
             <Card className="border-none shadow-2xl rounded-[2.5rem] overflow-hidden">
               <div className={cn("h-3 transition-all duration-700", entryType === 'IN' ? "bg-primary" : "bg-blue-900")} />
               <CardHeader className="p-6 sm:p-10 border-b border-slate-100 bg-slate-50/50">
@@ -667,18 +694,16 @@ export default function WeighbridgePage() {
                   <div className="flex items-center gap-5">
                     <div className={cn(
                       "w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-black text-2xl transition-all shadow-xl",
-                      step === 1 
-                        ? (entryType === 'IN' ? "bg-primary text-white" : "bg-blue-900 text-white") 
-                        : "bg-green-500 text-white"
+                      entryType === 'IN' ? "bg-primary text-white" : "bg-blue-900 text-white"
                     )}>
-                      {step === 1 ? "01" : <CheckCircle2 className="w-8 h-8" />}
+                      <CheckCircle2 className="w-8 h-8" />
                     </div>
                     <div>
                       <CardTitle className="text-2xl font-black font-outfit uppercase tracking-tight">
                         {entryType === 'IN' ? 'Purchase Entry' : 'Dispatch Entry'}
                       </CardTitle>
                       <CardDescription className="text-xs font-black uppercase tracking-[0.2em] opacity-60">
-                        {step === 1 ? 'Initial Weight Capture' : 'Final Weight & Slip Generation'}
+                        Direct Weight Capture & Slip Generation
                       </CardDescription>
                     </div>
                   </div>
@@ -710,8 +735,7 @@ export default function WeighbridgePage() {
                 <form onSubmit={handleSubmit} className="space-y-12">
                   {/* Step Indicators */}
                   <div className="flex items-center gap-4">
-                    <div className={cn("flex-1 h-1.5 rounded-full transition-all duration-500", step >= 1 ? "bg-slate-900" : "bg-slate-100")} />
-                    <div className={cn("flex-1 h-1.5 rounded-full transition-all duration-500", step >= 2 ? "bg-slate-900" : "bg-slate-100")} />
+                    <div className={cn("flex-1 h-1.5 rounded-full transition-all duration-500", "bg-slate-900")} />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -721,15 +745,6 @@ export default function WeighbridgePage() {
                         <h3 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-2">
                           <User className="w-4 h-4 text-primary" /> Entity Details
                         </h3>
-                        <label className="flex items-center gap-2 text-[10px] font-black cursor-pointer bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-200 transition-all">
-                          <input 
-                            type="checkbox" 
-                            className="w-3.5 h-3.5 rounded-md border-slate-300 text-primary focus:ring-primary"
-                            checked={formData.isInternal}
-                            onChange={(e) => setFormData({...formData, isInternal: e.target.checked})}
-                          />
-                          Internal Entry
-                        </label>
                       </div>
 
                       <div className="grid grid-cols-1 gap-6">
@@ -768,185 +783,210 @@ export default function WeighbridgePage() {
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tollkata S.No</label>
                             <input 
                               type="text" 
-                              disabled
-                              className="w-full px-5 py-4 bg-slate-100 border border-slate-200 rounded-2xl outline-none font-black text-sm text-primary"
+                              required
+                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-sm text-slate-900"
+                              placeholder="Enter S.No"
                               value={formData.serialNumber}
+                              onChange={(e) => setFormData({...formData, serialNumber: e.target.value})}
                             />
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Logistics */}
-                    <div className="space-y-8">
-                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-primary" /> Logistics Info
-                      </h3>
-                      <div className="grid grid-cols-1 gap-6">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vehicle No</label>
-                            <input 
-                              type="text" 
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-sm uppercase tracking-widest"
-                              placeholder="HR-XX-XXXX"
-                              value={formData.vehicleNumber}
-                              onChange={(e) => setFormData({...formData, vehicleNumber: e.target.value.toUpperCase()})}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vehicle Type</label>
-                            <select 
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-xs uppercase tracking-widest appearance-none cursor-pointer"
-                              value={formData.vehicleType}
-                              onChange={handleVehicleTypeChange}
-                            >
-                              <option value="">Select Type</option>
-                              {vehicleRates.map(v => (
-                                <option key={v.id} value={v.vehicle_type}>{v.vehicle_type}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Driver Name</label>
-                          <input 
-                            type="text" 
-                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-bold text-sm"
-                            placeholder="Optional"
-                            value={formData.driverName}
-                            onChange={(e) => setFormData({...formData, driverName: e.target.value})}
-                          />
-                        </div>
+                    {/* Trollies Loop */}
+                    <div className="col-span-1 md:col-span-2 space-y-8">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-2">
+                          <Truck className="w-4 h-4 text-primary" /> Trollies / Commodities
+                        </h3>
+                        <button 
+                          type="button"
+                          onClick={() => setTrollies([...trollies, {
+                            id: Date.now().toString(),
+                            vehicleNumber: "",
+                            driverName: "",
+                            grainType: "",
+                            subcategory: "",
+                            vehicleType: "",
+                            grossWeight: "",
+                            tareWeight: "",
+                            netWeight: 0,
+                            rate: 0,
+                            totalAmount: 0,
+                            tollkataCharges: 0,
+                            isInternal: true
+                          }])}
+                          className="px-4 py-2 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Add Trolly
+                        </button>
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+                      <div className="space-y-6">
+                        {trollies.map((trolly, index) => (
+                          <div key={trolly.id} className="p-6 bg-slate-50 border border-slate-200 rounded-3xl relative">
+                            {trollies.length > 1 && (
+                              <button 
+                                type="button"
+                                onClick={() => setTrollies(trollies.filter((_, i) => i !== index))}
+                                className="absolute -top-3 -right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                            <div className="flex items-center gap-2 mb-6">
+                              <span className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-black">{index + 1}</span>
+                              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Trolly Details</h4>
+                            </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    {/* Weight & Category */}
-                    <div className="space-y-8">
-                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-2">
-                        <Scale className="w-4 h-4 text-primary" /> Commodities
-                      </h3>
-                      <div className="grid grid-cols-1 gap-6">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Grain Category</label>
-                            <select 
-                              required
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-xs uppercase tracking-widest appearance-none cursor-pointer"
-                              onChange={handleGrainChange}
-                              value={availableRates.find(r => r.category_name === formData.grainType)?.id || ""}
-                            >
-                              <option value="">Category</option>
-                              {availableRates.map(c => (
-                                <option key={c.id} value={c.id}>{c.category_name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Subcategory</label>
-                            <select 
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-xs uppercase tracking-widest appearance-none cursor-pointer disabled:opacity-50"
-                              disabled={!formData.grainType}
-                              value={formData.subcategory}
-                              onChange={(e) => setFormData({...formData, subcategory: e.target.value})}
-                            >
-                              <option value="">Subcategory</option>
-                              {subcategories.map((sub: string) => (
-                                <option key={sub} value={sub}>{sub}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                              {/* Vehicle */}
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vehicle No</label>
+                                <input 
+                                  type="text" 
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-xs uppercase tracking-widest"
+                                  placeholder="HR-XX-XXXX"
+                                  value={trolly.vehicleNumber}
+                                  onChange={(e) => handleTrollyChange(index, 'vehicleNumber', e.target.value.toUpperCase())}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vehicle Type</label>
+                                <select 
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-[10px] uppercase tracking-widest appearance-none cursor-pointer"
+                                  value={trolly.vehicleType}
+                                  onChange={(e) => handleVehicleTypeChange(index, e.target.value)}
+                                >
+                                  <option value="">Select Type</option>
+                                  {vehicleRates.map(v => (
+                                    <option key={v.id} value={v.vehicle_type}>{v.vehicle_type}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              
+                              {/* Grain */}
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Category</label>
+                                <select 
+                                  required
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-[10px] uppercase tracking-widest appearance-none cursor-pointer"
+                                  onChange={(e) => handleGrainChange(index, e.target.value)}
+                                  value={availableRates.find(r => r.category_name === trolly.grainType)?.id || ""}
+                                >
+                                  <option value="">Category</option>
+                                  {availableRates.map(c => (
+                                    <option key={c.id} value={c.id}>{c.category_name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Subcategory</label>
+                                <select 
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-[10px] uppercase tracking-widest appearance-none cursor-pointer disabled:opacity-50"
+                                  disabled={!trolly.grainType}
+                                  value={trolly.subcategory}
+                                  onChange={(e) => handleTrollyChange(index, 'subcategory', e.target.value)}
+                                >
+                                  <option value="">Subcategory</option>
+                                  {getSubcategories(trolly.grainType).map((sub: string) => (
+                                    <option key={sub} value={sub}>{sub}</option>
+                                  ))}
+                                </select>
+                              </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Initial Weight (KG)</label>
-                            <input 
-                              type="number" 
-                              name="grossWeight"
-                              required
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-lg"
-                              placeholder="0"
-                              value={formData.grossWeight}
-                              onChange={handleWeightChange}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Final Weight (KG)</label>
-                            <input 
-                              type="number" 
-                              name="tareWeight"
-                              disabled={step === 1}
-                              className={cn(
-                                "w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-lg",
-                                step === 1 && "opacity-40 cursor-not-allowed bg-slate-100"
-                              )}
-                              placeholder="0"
-                              value={formData.tareWeight}
-                              onChange={handleWeightChange}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Financial Summary */}
-                    <div className={cn(
-                      "rounded-[3rem] p-10 flex flex-col justify-between shadow-2xl relative overflow-hidden group border border-white/5 transition-all duration-700",
-                      entryType === 'IN' ? "bg-slate-900 text-white" : "bg-blue-900 text-white"
-                    )}>
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl group-hover:bg-white/10 transition-all duration-1000" />
-                      
-                      <div className="space-y-8 relative z-10">
-                        <div className="flex justify-between items-end">
-                          <div>
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 block mb-1">Net Weight</span>
-                            <span className="text-4xl font-black tracking-tighter">{(formData.netWeight / 100).toFixed(2)} <span className="text-xl opacity-60">Qtl</span></span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 block mb-1">Tollkata Fee</span>
-                            <span className="text-xl font-black text-primary">{formatCurrency(formData.tollkataCharges)}</span>
-                          </div>
-                        </div>
-
-                        <div className="h-px bg-white/10" />
-
-                        <div className="space-y-4">
-                          <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/10">
-                            <span className="font-bold opacity-50 uppercase tracking-widest text-[10px]">Rate In / Quintal</span>
-                            <div className="flex items-center gap-2">
-                               <span className="text-sm font-black opacity-40">₹</span>
-                               <input 
-                                 type="number"
-                                 className="bg-transparent border-none text-right font-black text-white focus:ring-0 w-24 p-0"
-                                 value={formData.rate}
-                                 onChange={handleRateChange}
-                                 placeholder="0.00"
-                               />
+                              {/* Weight & Rate */}
+                              <div className="space-y-2 lg:col-span-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Net Wt (Qtl)</label>
+                                <input 
+                                  type="number" 
+                                  step="any"
+                                  required
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-sm"
+                                  placeholder="0"
+                                  value={trolly.netWeight ? trolly.netWeight / 100 : ""}
+                                  onChange={(e) => handleNetWeightChange(index, e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Rate (₹)</label>
+                                <input 
+                                  type="number" 
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-black text-sm"
+                                  placeholder="0"
+                                  value={trolly.rate}
+                                  onChange={(e) => handleRateChange(index, e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Driver (Opt)</label>
+                                <input 
+                                  type="text" 
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-primary/10 outline-none transition-all font-bold text-[10px]"
+                                  placeholder="Name"
+                                  value={trolly.driverName}
+                                  onChange={(e) => handleTrollyChange(index, 'driverName', e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="mt-4 flex justify-between items-center border-t border-slate-200 pt-4">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Trolly Value: <span className="text-slate-900">{formatCurrency(trolly.totalAmount)}</span> + <span className="text-primary">{formatCurrency(parseFloat(trolly.tollkataCharges as any) || 0)}</span></span>
                             </div>
                           </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="col-span-1 md:col-span-2 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+
+                    <div className="col-span-1 md:col-span-2">
+                      {/* Financial Summary */}
+                      <div className={cn(
+                        "h-fit rounded-[3rem] p-10 flex flex-col justify-between shadow-2xl relative overflow-hidden group border border-white/5 transition-all duration-700",
+                        entryType === 'IN' ? "bg-slate-900 text-white" : "bg-blue-900 text-white"
+                      )}>
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl group-hover:bg-white/10 transition-all duration-1000" />
+                        
+                        <div className="space-y-8 relative z-10">
                           <div className="flex justify-between items-end">
-                            <span className="font-bold opacity-50 uppercase tracking-widest text-[10px]">Total Value</span>
-                            <span className="text-4xl font-black text-primary tracking-tighter">{formatCurrency(formData.totalAmount)}</span>
+                            <div>
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 block mb-1">Grand Net Weight</span>
+                              <span className="text-4xl font-black tracking-tighter">{(trollies.reduce((sum, t) => sum + t.netWeight, 0) / 100).toFixed(2)} <span className="text-xl opacity-60">Qtl</span></span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 block mb-1">Total Tollkata</span>
+                              <span className="text-xl font-black text-primary">{formatCurrency(trollies.reduce((sum, t) => sum + (parseFloat(t.tollkataCharges as any) || 0), 0))}</span>
+                            </div>
+                          </div>
+
+                          <div className="h-px bg-white/10" />
+
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-end">
+                              <span className="font-bold opacity-50 uppercase tracking-widest text-[10px] w-24 leading-tight">Commodities Value</span>
+                              <span className="text-2xl font-black text-white tracking-tighter">{formatCurrency(trollies.reduce((sum, t) => sum + t.totalAmount, 0))}</span>
+                            </div>
+                            <div className="flex justify-between items-end pt-4 border-t border-white/10 mt-2">
+                              <span className="font-bold opacity-50 uppercase tracking-widest text-[10px] w-24 leading-tight">Grand Total</span>
+                              <span className="text-4xl font-black text-primary tracking-tighter">{formatCurrency(trollies.reduce((sum, t) => sum + t.totalAmount + (parseFloat(t.tollkataCharges as any) || 0), 0))}</span>
+                            </div>
                           </div>
                         </div>
+                        
+                        <button 
+                          type="submit"
+                          disabled={isSubmitting}
+                          className={cn(
+                            "w-full font-black py-6 rounded-[1.5rem] mt-10 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 uppercase tracking-[0.2em] text-xs shadow-2xl shadow-black/20",
+                            entryType === 'IN' ? "bg-primary text-white" : "bg-white text-blue-900"
+                          )}
+                        >
+                          {isSubmitting ? "Processing..." : `Generate ${trollies.length > 1 ? 'Batch' : 'Official'} Slip`}
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
                       </div>
-                      
-                      <button 
-                        type="submit"
-                        disabled={isSubmitting}
-                        className={cn(
-                          "w-full font-black py-6 rounded-[1.5rem] mt-10 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 uppercase tracking-[0.2em] text-xs shadow-2xl shadow-black/20",
-                          entryType === 'IN' ? "bg-primary text-white" : "bg-white text-blue-900"
-                        )}
-                      >
-                        {isSubmitting ? "Processing..." : (step === 1 ? "Next Phase: Final Weight" : "Generate Official Slip")}
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
                     </div>
                   </div>
                 </form>
@@ -954,70 +994,7 @@ export default function WeighbridgePage() {
             </Card>
           </div>
 
-          {/* Quick Info / Stats */}
-          <div className="lg:col-span-4 space-y-8">
-             {/* Queue Summary */}
-             <Card className="border-none shadow-xl rounded-[2.5rem] overflow-hidden">
-              <CardHeader className="bg-slate-900 text-white p-8">
-                <CardTitle className="text-xs font-black uppercase tracking-[0.3em] opacity-60">Today's Pulse</CardTitle>
-                <div className="mt-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-4xl font-black tracking-tighter">{slips.length}</p>
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Total Slips</p>
-                  </div>
-                  {(user as any)?.role !== 'staff' && (
-                    <div className="text-right">
-                      <p className="text-2xl font-black tracking-tighter text-primary">{(slips.reduce((acc, s) => acc + (s.net_weight || 0), 0) / 1000).toFixed(2)}</p>
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Tonnage (MT)</p>
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                 <div className="p-8 space-y-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                        <ArrowDownLeft className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Inward (Purchase)</span>
-                          <span className="text-sm font-black text-slate-900">{slips.filter(s => s.entry_type === 'IN').length}</span>
-                        </div>
-                        <div className="w-full h-1 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                          <div className="h-full bg-primary" style={{ width: `${(slips.filter(s => s.entry_type === 'IN').length / (slips.length || 1)) * 100}%` }} />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-900">
-                        <ArrowUpRight className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Outward (Sale)</span>
-                          <span className="text-sm font-black text-slate-900">{slips.filter(s => s.entry_type === 'OUT').length}</span>
-                        </div>
-                        <div className="w-full h-1 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                          <div className="h-full bg-blue-900" style={{ width: `${(slips.filter(s => s.entry_type === 'OUT').length / (slips.length || 1)) * 100}%` }} />
-                        </div>
-                      </div>
-                    </div>
-                 </div>
-              </CardContent>
-            </Card>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-[2rem] p-10 space-y-4 shadow-sm relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-200/20 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-amber-300/30 transition-all duration-700" />
-              <div className="flex items-center gap-3 text-amber-800 font-black uppercase tracking-widest text-xs relative z-10">
-                <Info className="w-5 h-5" />
-                <span>Operator Guide</span>
-              </div>
-              <p className="text-[11px] font-bold text-amber-700 leading-relaxed uppercase tracking-tight relative z-10">
-                Ensure the vehicle is fully stationary on the weighbridge before capturing weight. Cross-verify the vehicle number with the physical number plate for every entry.
-              </p>
-            </div>
-          </div>
         </div>
       )}
 
@@ -1069,7 +1046,7 @@ export default function WeighbridgePage() {
                       type="date" 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.dateFrom}
-                      onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, dateFrom: e.target.value}) }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1078,7 +1055,7 @@ export default function WeighbridgePage() {
                       type="date" 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.dateTo}
-                      onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, dateTo: e.target.value}) }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1086,7 +1063,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.category}
-                      onChange={(e) => setFilters({...filters, category: e.target.value, subcategory: ""})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, category: e.target.value, subcategory: ""}) }}
                     >
                       <option value="">All Categories</option>
                       {availableRates.map(c => <option key={c.id} value={c.category_name}>{c.category_name}</option>)}
@@ -1097,7 +1074,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none disabled:opacity-50"
                       value={filters.subcategory}
-                      onChange={(e) => setFilters({...filters, subcategory: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, subcategory: e.target.value}) }}
                       disabled={!filters.category}
                     >
                       <option value="">All Subcategories</option>
@@ -1109,7 +1086,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.status}
-                      onChange={(e) => setFilters({...filters, status: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, status: e.target.value}) }}
                     >
                       <option value="">All Status</option>
                       <option value="APPROVED">Approved</option>
@@ -1122,7 +1099,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.type}
-                      onChange={(e) => setFilters({...filters, type: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, type: e.target.value}) }}
                     >
                       <option value="ALL">All Entries</option>
                       <option value="INTERNAL">Internal Only</option>
@@ -1134,7 +1111,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.scaleSource}
-                      onChange={(e) => setFilters({...filters, scaleSource: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, scaleSource: e.target.value}) }}
                     >
                       <option value="ALL">All Combined</option>
                       <option value="Weighbridge">Weighbridge</option>
@@ -1210,7 +1187,7 @@ export default function WeighbridgePage() {
                               </div>
                             </td>
                             <td className="px-6 py-6 text-right">
-                              <p className="text-xs font-black text-slate-900">{(slip.net_weight / 100).toFixed(2)} <span className="text-[10px] opacity-40">Qtl</span></p>
+                              <p className="text-xs font-black text-slate-900">{((parseFloat(slip.net_weight as any) || 0) / 100).toFixed(2)} <span className="text-[10px] opacity-40">Qtl</span></p>
                             </td>
                             <td className="px-6 py-6 text-right">
                               <p className="text-xs font-black text-slate-900">{formatCurrency(slip.rate_per_mt || 0)}</p>
@@ -1263,35 +1240,47 @@ export default function WeighbridgePage() {
                             <td className="px-8 py-6 text-right">
                                <div className="flex items-center justify-end gap-2 ">
                                   <button 
-                                    onClick={() => { setSelectedSlip(slip); setIsModalOpen(true); }}
+                                    onClick={() => { 
+                                      let printSlip = slip;
+                                      if (slip.serial_number) {
+                                        const related = slips.filter(s => s.serial_number === slip.serial_number && s.scale_type === slip.scale_type);
+                                        if (related.length > 1) {
+                                          // Sort by slip_no to ensure correct order
+                                          const sortedRelated = [...related].sort((a, b) => (a.slip_no || '').localeCompare(b.slip_no || ''));
+                                          printSlip = { ...slip, items: sortedRelated };
+                                        }
+                                      }
+                                      setSelectedSlip(printSlip); 
+                                      setIsModalOpen(true); 
+                                    }}
                                     className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="View/Print"
                                   >
                                     <Eye className="w-3.5 h-3.5" />
                                   </button>
                                   {(user as any)?.role !== 'staff' && (
-                                     <>
-                                       <button 
-                                         onClick={() => {
-                                           const isWb = slip.scale_type !== 'Small Scale';
-                                           const currentWeight = isWb ? slip.net_weight : slip.total_weight;
-                                           const currentRate = isWb ? slip.rate_per_mt : slip.price_per_unit;
-                                           setEditForm({
-                                             id: slip.id,
-                                             scaleType: slip.scale_type || 'Weighbridge',
-                                             farmer_name: slip.farmer_name || slip.party_name || '',
-                                             farmer_mobile: slip.farmer_mobile || slip.party_mobile || '',
-                                             address: slip.address || '',
-                                             vehicle_no: slip.vehicle_no || '',
-                                             net_weight: currentWeight?.toString() || '0',
-                                             rate_per_mt: currentRate?.toString() || '0'
-                                           });
-                                           setIsEditModalOpen(true);
-                                         }}
-                                         className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Edit Record"
-                                       >
-                                         <Edit className="w-3.5 h-3.5" />
-                                       </button>
-                                       <button 
+                                     <button 
+                                       onClick={() => {
+                                         const currentWeight = slip.net_weight;
+                                         const currentRate = slip.rate_per_mt;
+                                         setEditForm({
+                                           id: slip.id,
+                                           scaleType: slip.scale_type || 'Weighbridge',
+                                           farmer_name: slip.farmer_name || slip.party_name || '',
+                                           farmer_mobile: slip.farmer_mobile || slip.party_mobile || '',
+                                           address: slip.address || '',
+                                           vehicle_no: slip.vehicle_no || '',
+                                           net_weight: currentWeight?.toString() || '0',
+                                           rate_per_mt: currentRate?.toString() || '0'
+                                         });
+                                         setIsEditModalOpen(true);
+                                       }}
+                                       className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Edit Record"
+                                     >
+                                       <Edit className="w-3.5 h-3.5" />
+                                     </button>
+                                   )}
+                                   {(user as any)?.role !== 'staff' && (
+                                     <button 
                                          onClick={async () => {
                                            if (!confirm(`Permanently remove entry #${slip.slip_no || slip.serial_number}?`)) return;
                                            try {
@@ -1312,7 +1301,6 @@ export default function WeighbridgePage() {
                                        >
                                          <Trash2 className="w-3.5 h-3.5" />
                                        </button>
-                                     </>
                                    )}
                                </div>
                             </td>
@@ -1564,7 +1552,7 @@ export default function WeighbridgePage() {
 
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">Net Weight ({editForm.scaleType !== 'Small Scale' ? 'scaled unit' : 'Qtl'})</label>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">Net Weight ({editForm.scaleType !== 'Small Scale' ? 'scaled unit' : 'kg'})</label>
                   <input 
                     type="number" 
                     step="any"
@@ -1594,7 +1582,7 @@ export default function WeighbridgePage() {
               </button>
               <button 
                 onClick={async () => {
-                  if (editForm.farmer_mobile.trim()) {
+                  if (editForm.farmer_mobile.trim() && !editForm.farmer_mobile.trim().startsWith('NA-')) {
                     const rawMobile = editForm.farmer_mobile.trim();
                     const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
                     let cleaned = digitsOnly;

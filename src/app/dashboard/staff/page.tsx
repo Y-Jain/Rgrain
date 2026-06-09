@@ -74,6 +74,7 @@ export default function StaffManagementPage() {
   const [showEditModal, setShowEditModal]       = useState(false);
   const [showLedgerModal, setShowLedgerModal]   = useState(false);
   const [submitting, setSubmitting]             = useState(false);
+  const [staffToDelete, setStaffToDelete]       = useState<any>(null);
 
   const [newStaff, setNewStaff] = useState({ name: "", email: "", mobile: "", password: "", templateId: "" });
   const [editingStaff, setEditingStaff] = useState<any>(null);
@@ -115,12 +116,23 @@ export default function StaffManagementPage() {
     } catch { toast.error("Failed to update status"); }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this staff member?")) return;
+  const handleDelete = async () => {
+    if (!staffToDelete) return;
+    setSubmitting(true);
     try {
-      const res = await fetch(`/api/staff?id=${id}`, { method: "DELETE" });
-      if (res.ok) { toast.success("Staff member deleted"); fetchStaff(); }
-    } catch { toast.error("Failed to delete staff"); }
+      const res = await fetch(`/api/staff?id=${staffToDelete.id}`, { method: "DELETE" });
+      if (res.ok) { 
+        toast.success("Staff member deleted"); 
+        fetchStaff(); 
+        setStaffToDelete(null);
+      } else {
+        toast.error("Failed to delete staff");
+      }
+    } catch { 
+      toast.error("Failed to delete staff"); 
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleOnboard = async (e: React.FormEvent) => {
@@ -332,7 +344,7 @@ export default function StaffManagementPage() {
                                     <Edit2 className="w-4 h-4" />
                                   </button>
                                   <button
-                                    onClick={() => handleDelete(staff.id)}
+                                    onClick={() => setStaffToDelete(staff)}
                                     className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-destructive transition-all"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -586,6 +598,39 @@ export default function StaffManagementPage() {
           onClose={() => setShowLedgerModal(false)} 
         />
       )}
+      {/* ── Delete Confirmation Modal ── */}
+      {staffToDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 font-outfit">Delete Staff Member?</h3>
+              <p className="text-sm text-slate-500 font-medium">
+                Are you sure you want to delete <span className="font-bold text-slate-900">{staffToDelete.name}</span>? This action cannot be undone.
+              </p>
+              <div className="pt-4 flex gap-3">
+                <button
+                  onClick={() => setStaffToDelete(null)}
+                  className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={submitting}
+                  className="flex-1 py-3 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
   );
 }

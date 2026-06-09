@@ -15,7 +15,8 @@ import {
   ArrowLeft,
   ReceiptIndianRupee,
   RotateCcw,
-  Building2
+  Building2,
+  Layers
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { 
@@ -59,6 +60,7 @@ export default function DashboardPage() {
   
   // Modal States
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [stockModalMode, setStockModalMode] = useState<'current' | 'lifetime'>('current');
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [drillDownData, setDrillDownData] = useState<any[]>([]);
@@ -79,7 +81,12 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/rates');
       const rates = await res.json();
-      setCategories(rates);
+      if (Array.isArray(rates)) {
+        setCategories(rates);
+      } else {
+        console.error("Rates API returned non-array:", rates);
+        setCategories([]);
+      }
     } catch (e) {
       console.error("Failed to fetch categories", e);
     }
@@ -187,14 +194,18 @@ export default function DashboardPage() {
       const response = await fetch(endpoint);
       const result = await response.json();
       if (type === 'purchase') {
-        const mapped = (result.categorySplit || []).map((cat: any) => {
-          const rateObj = (result.avgRateSplit || []).find((r: any) => r.name === cat.name);
-          return { name: cat.name, value: cat.value * (rateObj?.value || 0) };
-        });
-        setDrillDownData(mapped);
+        setDrillDownData(result.purchaseSplit || []);
         setDrillDownTitle(`${categoryName} - Purchase Value Split`);
       } else {
-        setDrillDownData(type === 'stock' ? result.categorySplit : result.avgRateSplit || []);
+        if (type === 'stock') {
+          if (stockModalMode === 'lifetime') {
+            setDrillDownData(result.lifetimeCategorySplit || []);
+          } else {
+            setDrillDownData(result.categorySplit || []);
+          }
+        } else {
+          setDrillDownData(result.avgRateSplit || []);
+        }
         setDrillDownTitle(`${categoryName} - ${type === 'stock' ? 'Subcategory Split' : 'Avg Rate Split'}`);
       }
       setIsSubView(true);
@@ -219,6 +230,7 @@ export default function DashboardPage() {
   };
 
   const openStockModal = () => {
+    setStockModalMode('current');
     if (selectedCategory) {
       setDrillDownData(data?.categorySplit || []);
       setDrillDownTitle(`${selectedCategory} - Subcategory Split`);
@@ -230,20 +242,27 @@ export default function DashboardPage() {
     }
     setIsStockModalOpen(true);
   };
-  const openPurchaseModal = () => {
-    const generateMappedData = () => {
-      return (data?.categorySplit || []).map((cat: any) => {
-        const rateObj = (data?.avgRateSplit || []).find((r: any) => r.name === cat.name);
-        return { name: cat.name, value: cat.value * (rateObj?.value || 0) };
-      });
-    };
 
+  const openLifetimeStockModal = () => {
+    setStockModalMode('lifetime');
     if (selectedCategory) {
-      setDrillDownData(generateMappedData());
+      setDrillDownData(data?.lifetimeCategorySplit || []);
+      setDrillDownTitle(`Lifetime ${selectedCategory} - Subcategory Split`);
+      setIsSubView(true);
+    } else {
+      setDrillDownData(data?.lifetimeCategorySplit || []);
+      setDrillDownTitle("Lifetime Category Wise Stock");
+      setIsSubView(false);
+    }
+    setIsStockModalOpen(true);
+  };
+  const openPurchaseModal = () => {
+    if (selectedCategory) {
+      setDrillDownData(data?.purchaseSplit || []);
       setDrillDownTitle(`${selectedCategory} - Purchase Value Split`);
       setIsSubView(true);
     } else {
-      setDrillDownData(generateMappedData());
+      setDrillDownData(data?.purchaseSplit || []);
       setDrillDownTitle("Category Wise Purchase Value");
       setIsSubView(false);
     }
@@ -309,6 +328,17 @@ export default function DashboardPage() {
       bgColor: "bg-green-600/10",
       clickable: true,
       onClick: openStockModal
+    },
+    { 
+      title: "Lifetime Stock", 
+      value: `${Number(data?.kpis?.lifetimeStock || 0).toFixed(3)} Qtl`, 
+      change: "Overall", 
+      trend: "up", 
+      icon: Layers, 
+      color: "text-emerald-600",
+      bgColor: "bg-emerald-600/10",
+      clickable: true,
+      onClick: openLifetimeStockModal
     },
   ];
 
@@ -484,7 +514,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {kpis.map((kpi) => (
           <Card 
             key={kpi.title} 
@@ -502,7 +532,7 @@ export default function DashboardPage() {
               </div>
               <div className="mt-4">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{kpi.title}</p>
-                <h3 className="text-2xl font-black mt-1 font-outfit text-slate-900">{kpi.value}</h3>
+                <h3 className="text-xl xl:text-2xl font-black mt-1 font-outfit text-slate-900 tracking-tighter truncate" title={kpi.value as string}>{kpi.value}</h3>
               </div>
             </CardContent>
           </Card>
@@ -518,7 +548,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={data?.avgRateTrend || []}>
                   <defs>
                     <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
@@ -582,7 +612,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[250px] sm:h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
@@ -634,7 +664,7 @@ export default function DashboardPage() {
             <div className="h-[280px] w-full relative">
               {categoryData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={categoryData}
@@ -693,7 +723,7 @@ export default function DashboardPage() {
             <div className="h-[280px] w-full relative">
               {sourceData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={sourceData}
@@ -827,8 +857,13 @@ export default function DashboardPage() {
                     {isSubView && (
                       <button 
                         onClick={() => {
-                          setDrillDownData(data?.categorySplit || []);
-                          setDrillDownTitle("Category Wise Stock");
+                          if (stockModalMode === 'lifetime') {
+                            setDrillDownData(data?.lifetimeCategorySplit || []);
+                            setDrillDownTitle("Lifetime Category Wise Stock");
+                          } else {
+                            setDrillDownData(data?.categorySplit || []);
+                            setDrillDownTitle("Category Wise Stock");
+                          }
                           setIsSubView(false);
                         }}
                         className="p-2 hover:bg-slate-200 rounded-full transition-all"
@@ -887,7 +922,7 @@ export default function DashboardPage() {
                                       className="h-full rounded-full transition-all duration-1000" 
                                       style={{ 
                                         backgroundColor: COLORS[index % COLORS.length],
-                                        width: `${Math.min((item.value / (data?.kpis?.totalStock || 1)) * 100, 100)}%`
+                                        width: `${Math.min((item.value / ((stockModalMode === 'lifetime' ? data?.kpis?.lifetimeStock : data?.kpis?.totalStock) || 1)) * 100, 100)}%`
                                       }} 
                                     />
                                  </div>
@@ -907,7 +942,7 @@ export default function DashboardPage() {
               <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between items-center">
                  <div className="text-left">
                     <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Total Net Stock</p>
-                    <p className="text-lg font-black text-slate-900">{Number(data?.kpis?.totalStock || 0).toFixed(3)} Qtl</p>
+                    <p className="text-lg font-black text-slate-900">{Number((stockModalMode === 'lifetime' ? data?.kpis?.lifetimeStock : data?.kpis?.totalStock) || 0).toFixed(3)} Qtl</p>
                  </div>
                  <button 
                    onClick={() => setIsStockModalOpen(false)}
@@ -1021,13 +1056,7 @@ export default function DashboardPage() {
                     {isSubView && (
                       <button 
                         onClick={() => {
-                          const generateMappedData = () => {
-                            return (data?.categorySplit || []).map((cat: any) => {
-                              const rateObj = (data?.avgRateSplit || []).find((r: any) => r.name === cat.name);
-                              return { name: cat.name, value: cat.value * (rateObj?.value || 0) };
-                            });
-                          };
-                          setDrillDownData(generateMappedData());
+                          setDrillDownData(data?.purchaseSplit || []);
                           setDrillDownTitle("Category Wise Purchase Value");
                           setIsSubView(false);
                         }}

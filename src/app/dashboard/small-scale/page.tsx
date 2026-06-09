@@ -29,18 +29,33 @@ import {
   Eye,
   Printer,
   Edit,
-  Trash
+  Trash,
+  X
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 
-const bagTypes = [
-  { id: "30kg", name: "30 KG Bag", weight: 30 },
-  { id: "50kg", name: "50 KG Bag", weight: 50 },
-  { id: "95kg", name: "95 KG Bag (Jute)", weight: 95 },
-  { id: "custom", name: "Custom Weight", weight: 0 },
-];
+import SlipModal from "@/components/weighbridge/SlipModal";
+
+const mapLogToSlip = (log: any) => ({
+  slip_no: `SS-${log.id}`,
+  serial_number: log.id,
+  entry_type: log.entry_type || 'IN',
+  farmer_name: log.party_name,
+  farmer_mobile: log.party_mobile,
+  address: log.address,
+  vehicle_no: "Small Scale",
+  driver_name: "N/A",
+  vehicle_type: "Walk-in",
+  grain_category: log.grain_category,
+  subcategory: log.subcategory,
+  net_weight: log.total_weight,
+  tollkata_charges: 0,
+  rate_per_mt: log.price_per_unit,
+  payable_amount: log.total_amount,
+  created_at: log.created_at || new Date().toISOString()
+});
 
 export default function SmallScalePage() {
   const { user } = useAuthStore();
@@ -49,7 +64,6 @@ export default function SmallScalePage() {
   const [availableRates, setAvailableRates] = useState<any[]>([]);
   
   const [entryType] = useState<'IN'>('IN'); // Force only PURCHASE (IN)
-  const [inputMode, setInputMode] = useState<'BAG' | 'BULK'>('BAG');
   
   const [partyInfo, setPartyInfo] = useState({
     name: "",
@@ -58,20 +72,21 @@ export default function SmallScalePage() {
     address: ""
   });
   
-  const [grainCategory, setGrainCategory] = useState("");
-  const [subcategory, setSubcategory] = useState("");
-  const [pricePerUnit, setPricePerUnit] = useState(""); // Rate per MT
-  
-  const [entries, setEntries] = useState([
-    { id: 1, bagType: "50kg", count: "", weight: 50, subtotal: 0 },
-  ]);
-  
-  const [bulkWeight, setBulkWeight] = useState(""); // in KG
+  const [items, setItems] = useState([{
+    id: Date.now().toString(),
+    grainCategory: "",
+    subcategory: "",
+    pricePerUnit: "",
+    bulkWeight: "",
+    totalAmount: 0
+  }]);
+
   const [moisture, setMoisture] = useState("");
   const [foreignMatter, setForeignMatter] = useState("");
   const [selectedBin, setSelectedBin] = useState("");
   const [logs, setLogs] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedSlip, setSelectedSlip] = useState<any>(null);
 
   // Filter States
   const [filters, setFilters] = useState({
@@ -91,23 +106,34 @@ export default function SmallScalePage() {
       const res = await fetch(`/api/rates?branchId=${user.branchId}`);
       const data = await res.json();
       setAvailableRates(data);
-      if (data.length > 0 && !grainCategory) {
-        setGrainCategory(data[0].category_name);
-      }
+      
+      // Auto-set first item's category if empty
+      setItems(prev => {
+        if (prev.length > 0 && !prev[0].grainCategory && data.length > 0) {
+          const newItems = [...prev];
+          newItems[0] = {
+             ...newItems[0],
+             grainCategory: data[0].category_name,
+             pricePerUnit: data[0].procurement_rate
+          };
+          return newItems;
+        }
+        return prev;
+      });
     } catch (error) {
       console.error("Failed to fetch rates:", error);
     }
   };
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (currentFilters = filters) => {
     try {
       const params = new URLSearchParams();
       if (user?.branchId) params.append('branchId', user.branchId);
-      if (filters.startDate) params.append('startDate', filters.startDate);
-      if (filters.endDate) params.append('endDate', filters.endDate);
-      if (filters.slipNo) params.append('slipNo', filters.slipNo);
-      if (filters.category) params.append('category', filters.category);
-      if (filters.subcategory) params.append('subcategory', filters.subcategory);
+      if (currentFilters.startDate) params.append('startDate', currentFilters.startDate);
+      if (currentFilters.endDate) params.append('endDate', currentFilters.endDate);
+      if (currentFilters.slipNo) params.append('slipNo', currentFilters.slipNo);
+      if (currentFilters.category) params.append('category', currentFilters.category);
+      if (currentFilters.subcategory) params.append('subcategory', currentFilters.subcategory);
 
       const res = await fetch(`/api/small-scale?${params.toString()}`);
       const data = await res.json();
@@ -117,6 +143,12 @@ export default function SmallScalePage() {
     } catch (error) {
       console.error("Failed to fetch small scale logs:", error);
     }
+  };
+
+  const handleClearFilters = () => {
+    const emptyFilters = { startDate: "", endDate: "", slipNo: "", category: "", subcategory: "" };
+    setFilters(emptyFilters);
+    fetchLogs(emptyFilters);
   };
 
   useEffect(() => {
@@ -135,75 +167,63 @@ export default function SmallScalePage() {
     fetchLogs();
   }, [user]);
 
-  // Update subcategories and price when category changes
-  useEffect(() => {
-    const selected = availableRates.find(r => r.category_name === grainCategory);
-    if (selected) {
-      setPricePerUnit(selected.procurement_rate);
-      // Reset subcategory if not in the new category
-      let subs = [];
-      try {
-        if (Array.isArray(selected.subcategories)) {
-          subs = selected.subcategories;
-        } else if (typeof selected.subcategories === 'string') {
-          subs = JSON.parse(selected.subcategories);
-        } else {
-          subs = [];
-        }
-      } catch (e) {
-        console.error("Error parsing subcategories", e);
-      }
-      if (subs.length > 0) {
-        setSubcategory(subs[0]);
-      } else {
-        setSubcategory("");
-      }
+  const handleItemChange = (index: number, field: string, value: any) => {
+    const newItems = [...items];
+    (newItems[index] as any)[field] = value;
+    
+    if (field === 'bulkWeight' || field === 'pricePerUnit') {
+      const weightQtl = parseFloat(newItems[index].bulkWeight) || 0;
+      const rate = parseFloat(newItems[index].pricePerUnit) || 0;
+      newItems[index].totalAmount = weightQtl * rate;
     }
-  }, [grainCategory, availableRates]);
-
-  const addEntry = () => {
-    setEntries([...entries, { id: Date.now(), bagType: "50kg", count: "", weight: 50, subtotal: 0 }]);
+    setItems(newItems);
   };
 
-  const removeEntry = (id: number) => {
-    if (entries.length > 1) {
-      setEntries(entries.filter(e => e.id !== id));
+  const handleCategoryChange = (index: number, categoryName: string) => {
+    const category = availableRates.find(c => c.category_name === categoryName);
+    const newItems = [...items];
+    
+    if (category) {
+      newItems[index] = {
+        ...newItems[index],
+        grainCategory: categoryName,
+        subcategory: "",
+        pricePerUnit: category.procurement_rate
+      };
+      
+      const weightQtl = parseFloat(newItems[index].bulkWeight) || 0;
+      newItems[index].totalAmount = weightQtl * parseFloat(category.procurement_rate || "0");
+    } else {
+      newItems[index].grainCategory = categoryName;
+    }
+    setItems(newItems);
+  };
+
+  const addItem = () => {
+    setItems([...items, {
+      id: Date.now().toString(),
+      grainCategory: "",
+      subcategory: "",
+      pricePerUnit: "",
+      bulkWeight: "",
+      totalAmount: 0
+    }]);
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length > 1) {
+      const newItems = [...items];
+      newItems.splice(index, 1);
+      setItems(newItems);
     }
   };
 
-  const updateEntry = (id: number, field: string, value: any) => {
-    const updatedEntries = entries.map(e => {
-      if (e.id === id) {
-        const updated = { ...e, [field]: value };
-        if (field === "bagType") {
-          const type = bagTypes.find(t => t.id === value);
-          updated.weight = type?.weight || 0;
-        }
-        updated.subtotal = parseFloat(updated.count || "0") * updated.weight;
-        return updated;
-      }
-      return e;
-    });
-    setEntries(updatedEntries);
-  };
-
-  const totalWeight = inputMode === 'BAG' 
-    ? entries.reduce((acc, curr) => acc + (curr.subtotal || 0), 0)
-    : parseFloat(bulkWeight || "0");
-
-  const totalBags = inputMode === 'BAG'
-    ? entries.reduce((acc, curr) => acc + parseInt(curr.count || "0"), 0)
-    : 0;
-
-  const totalAmount = (totalWeight / 100) * parseFloat(pricePerUnit || "0");
+  const grandTotalWeight = items.reduce((sum, item) => sum + ((parseFloat(item.bulkWeight) || 0) * 100), 0);
+  const grandTotalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
 
   const handleSave = async () => {
-    if (totalWeight <= 0) {
-      toast.error("Please enter weight details");
-      return;
-    }
-    if (!grainCategory) {
-      toast.error("Please select a grain category");
+    if (items.some(item => !item.grainCategory || !item.bulkWeight)) {
+      toast.error("Please fill in Grain Category and Weight for all items");
       return;
     }
 
@@ -225,38 +245,48 @@ export default function SmallScalePage() {
 
     setIsSubmitting(true);
     try {
+      const itemsPayload = items.map(item => ({
+        grainCategory: item.grainCategory,
+        subcategory: item.subcategory,
+        pricePerUnit: parseFloat(item.pricePerUnit) || 0,
+        totalWeight: (parseFloat(item.bulkWeight) || 0) * 100,
+        totalAmount: item.totalAmount,
+        bags: [],
+        totalBags: 0,
+        moisture,
+        foreignMatter,
+        storageLocation: selectedBin
+      }));
+
       const res = await fetch('/api/small-scale', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           branchId: user?.branchId,
-          bags: inputMode === 'BAG' ? entries : [],
-          totalWeight,
-          totalBags,
-          moisture,
-          foreignMatter,
-          storageLocation: selectedBin,
           createdBy: user?.id,
           entryType,
           partyName: partyInfo.name,
           partyMobile: partyInfo.mobile,
           partyEmail: partyInfo.email,
           address: partyInfo.address,
-          grainCategory,
-          subcategory,
-          pricePerUnit: parseFloat(pricePerUnit) || 0,
-          totalAmount
+          items: itemsPayload
         })
       });
 
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      toast.success(`Purchase entry recorded and ledger updated!`);
+      toast.success(`Purchase entries recorded and awaiting Admin Approval!`);
       
-      // Reset form
-      setEntries([{ id: 1, bagType: "50kg", count: "", weight: 50, subtotal: 0 }]);
-      setBulkWeight("");
+      const mappedSlip = mapLogToSlip(Array.isArray(data) ? data[0] : data);
+      setItems([{
+        id: Date.now().toString(),
+        grainCategory: "",
+        subcategory: "",
+        pricePerUnit: "",
+        bulkWeight: "",
+        totalAmount: 0
+      }]);
       setMoisture("");
       setForeignMatter("");
       setSelectedBin("");
@@ -279,6 +309,7 @@ export default function SmallScalePage() {
       'Category': log.grain_category,
       'Subcategory': log.subcategory || '-',
       'Weight (KG)': log.total_weight,
+      'Weight (Qtl)': (log.total_weight / 100).toFixed(2),
       'Rate (QTL)': log.price_per_unit,
       'Total Amount': log.total_amount,
     }));
@@ -391,151 +422,113 @@ export default function SmallScalePage() {
 
           {/* Weighing Section */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-row items-center justify-between pb-4">
               <div className="flex items-center gap-4">
                  <div>
-                    <CardTitle>Weight & Pricing</CardTitle>
-                    <CardDescription>Record quantities and rates</CardDescription>
-                 </div>
-                 <div className="flex bg-muted p-1 rounded-lg">
-                    <button 
-                      onClick={() => setInputMode('BAG')}
-                      className={cn("px-3 py-1 text-[10px] font-black rounded-md transition-all", inputMode === 'BAG' ? "bg-white shadow-sm" : "opacity-50")}
-                    >BAGS</button>
-                    <button 
-                      onClick={() => setInputMode('BULK')}
-                      className={cn("px-3 py-1 text-[10px] font-black rounded-md transition-all", inputMode === 'BULK' ? "bg-white shadow-sm" : "opacity-50")}
-                    >BULK KG</button>
+                    <CardTitle>Crops & Pricing</CardTitle>
+                    <CardDescription>Record multiple crop quantities and rates</CardDescription>
                  </div>
               </div>
-              {inputMode === 'BAG' && (
-                <button 
-                  onClick={addEntry}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Row
-                </button>
-              )}
+              <button 
+                type="button"
+                onClick={addItem}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-2"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Item
+              </button>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-4 border-b border-border/50">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Grain Category</label>
-                    <select 
-                      value={grainCategory}
-                      onChange={e => setGrainCategory(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-muted/50 border border-border rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
+            <CardContent className="space-y-8">
+              {items.map((item, index) => (
+                <div key={item.id} className="relative p-6 bg-slate-50 border border-slate-200 rounded-3xl space-y-6">
+                  {items.length > 1 && (
+                    <button 
+                      type="button"
+                      onClick={() => removeItem(index)}
+                      className="absolute -top-3 -right-3 p-2 bg-white text-rose-500 rounded-full border border-rose-100 hover:bg-rose-50 hover:scale-110 shadow-sm transition-all"
                     >
-                       <option value="">Select Category</option>
-                       {availableRates.map(r => <option key={r.id} value={r.category_name}>{r.category_name}</option>)}
-                    </select>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Subcategory</label>
-                    <select 
-                      value={subcategory}
-                      onChange={e => setSubcategory(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-muted/50 border border-border rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
-                    >
-                       <option value="">Select Subcategory</option>
-                       {(() => {
-                         const selected = availableRates.find(r => r.category_name === grainCategory);
-                         if (!selected) return null;
-                         try {
-                           let subs = [];
-                           if (Array.isArray(selected.subcategories)) {
-                             subs = selected.subcategories;
-                           } else if (typeof selected.subcategories === 'string') {
-                             subs = JSON.parse(selected.subcategories);
-                           }
-                           
-                           return subs.map((sub: string) => (
-                             <option key={sub} value={sub}>{sub}</option>
-                           ));
-                         } catch (e) {
-                           return null;
-                         }
-                       })()}
-                    </select>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Rate (Per QTL)</label>
-                    <div className="relative">
-                       <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                       <input 
-                         type="number" 
-                         placeholder="0.00"
-                         className="w-full pl-10 pr-4 py-2.5 bg-muted/50 border border-border rounded-xl text-sm font-black focus:ring-2 focus:ring-primary/20 outline-none"
-                         value={pricePerUnit}
-                         onChange={e => setPricePerUnit(e.target.value)}
-                       />
-                    </div>
-                 </div>
-              </div>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
 
-              {inputMode === 'BAG' ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-12 gap-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest px-2">
-                    <div className="col-span-5">Bag Type</div>
-                    <div className="col-span-3">Bag Count</div>
-                    <div className="col-span-3 text-right">Subtotal (KG)</div>
-                    <div className="col-span-1"></div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Item #{index + 1}</h4>
                   </div>
-                  
-                  <div className="space-y-3">
-                    {entries.map((entry) => (
-                      <div key={entry.id} className="grid grid-cols-12 gap-4 items-center animate-in fade-in slide-in-from-left-2 duration-300">
-                        <div className="col-span-5">
-                          <select 
-                            value={entry.bagType}
-                            onChange={(e) => updateEntry(entry.id, "bagType", e.target.value)}
-                            className="w-full px-4 py-2 bg-muted/50 border border-border rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none"
-                          >
-                            {bagTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Grain Category</label>
+                        <select 
+                          value={item.grainCategory}
+                          onChange={e => handleCategoryChange(index, e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none appearance-none"
+                        >
+                           <option value="">Select Category</option>
+                           {availableRates.map(r => <option key={r.id} value={r.category_name}>{r.category_name}</option>)}
+                        </select>
+                     </div>
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subcategory</label>
+                        <select 
+                          value={item.subcategory}
+                          onChange={e => handleItemChange(index, 'subcategory', e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-primary/10 outline-none appearance-none"
+                        >
+                           <option value="">Select Subcategory</option>
+                           {(() => {
+                             const selected = availableRates.find(r => r.category_name === item.grainCategory);
+                             if (!selected) return null;
+                             try {
+                               let subs = [];
+                               if (Array.isArray(selected.subcategories)) {
+                                 subs = selected.subcategories;
+                               } else if (typeof selected.subcategories === 'string') {
+                                 subs = JSON.parse(selected.subcategories);
+                               }
+                               
+                               return subs.map((sub: string) => (
+                                 <option key={sub} value={sub}>{sub}</option>
+                               ));
+                             } catch (e) {
+                               return null;
+                             }
+                           })()}
+                        </select>
+                     </div>
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rate (Per QTL)</label>
+                        <div className="relative">
+                           <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                           <input 
+                             type="number" 
+                             placeholder="0.00"
+                             className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-black focus:ring-4 focus:ring-primary/10 outline-none"
+                             value={item.pricePerUnit}
+                             onChange={e => handleItemChange(index, 'pricePerUnit', e.target.value)}
+                           />
                         </div>
-                        <div className="col-span-3">
-                          <input 
-                            type="number" 
-                            value={entry.count}
-                            onChange={(e) => updateEntry(entry.id, "count", e.target.value)}
-                            placeholder="0"
-                            className="w-full px-4 py-2 bg-muted/50 border border-border rounded-xl text-sm font-black focus:ring-2 focus:ring-primary/20 outline-none"
-                          />
+                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200 flex flex-col items-center justify-center space-y-4">
+                     <div className="w-full max-w-xs space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center block">Total Weight (In Quintals)</label>
+                        <div className="relative">
+                           <Scale className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                           <input 
+                             type="number" 
+                             step="0.01"
+                             placeholder="0.00"
+                             className="w-full pl-12 pr-4 py-4 bg-white border-2 border-slate-200 rounded-2xl text-xl font-black focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all text-center"
+                             value={item.bulkWeight}
+                             onChange={e => handleItemChange(index, 'bulkWeight', e.target.value)}
+                           />
                         </div>
-                        <div className="col-span-3 text-right">
-                          <span className="text-sm font-black text-slate-700">{entry.subtotal.toFixed(1)}</span>
-                        </div>
-                        <div className="col-span-1 text-right">
-                          <button 
-                            onClick={() => removeEntry(entry.id)}
-                            className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                        <p className="text-xs font-bold text-slate-400 text-center uppercase tracking-widest">Equals: {((parseFloat(item.bulkWeight) || 0) * 100).toFixed(2)} KG</p>
+                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="py-8 flex flex-col items-center justify-center space-y-4">
-                   <div className="w-full max-w-xs space-y-2">
-                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center block">Total Weight (In Kilograms)</label>
-                      <div className="relative">
-                         <Scale className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                         <input 
-                           type="number" 
-                           placeholder="0.00"
-                           className="w-full pl-12 pr-4 py-4 bg-muted/30 border-2 border-border rounded-2xl text-2xl font-black text-center focus:border-primary/50 focus:ring-4 focus:ring-primary/10 outline-none transition-all"
-                           value={bulkWeight}
-                           onChange={e => setBulkWeight(e.target.value)}
-                         />
-                      </div>
-                   </div>
-                </div>
-              )}
+              ))}
             </CardContent>
           </Card>
         </div>
@@ -548,22 +541,20 @@ export default function SmallScalePage() {
               <CardTitle className="text-white opacity-80 uppercase text-xs tracking-widest font-black">Operation Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-8 relative z-10">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white/10 p-4 rounded-2xl backdrop-blur-sm border border-white/10">
-                  <p className="text-[10px] font-black text-white/50 uppercase tracking-widest mb-1">Quantity</p>
-                  <p className="text-xl font-black">{totalWeight.toFixed(1)} <span className="text-xs opacity-50">KG</span></p>
-                </div>
-                <div className="bg-white/10 p-4 rounded-2xl backdrop-blur-sm border border-white/10">
-                  <p className="text-[10px] font-black text-white/50 uppercase tracking-widest mb-1">Quintals</p>
-                  <p className="text-xl font-black">{(totalWeight / 100).toFixed(2)} <span className="text-xs opacity-50">Qtl</span></p>
-                </div>
+              <div className="bg-slate-900/50 p-6 rounded-2xl border border-white/10 flex items-center justify-between">
+                  <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Quantity</p>
+                      <p className="text-xl font-black text-white">{grandTotalWeight.toFixed(1)} <span className="text-xs text-slate-400 font-bold">KG</span></p>
+                  </div>
+                  <div className="text-right">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Quintals</p>
+                      <p className="text-xl font-black text-white">{(grandTotalWeight / 100).toFixed(2)} <span className="text-xs text-slate-400 font-bold">Qtl</span></p>
+                  </div>
               </div>
-
-              <div className="space-y-2">
-                 <p className="text-[10px] font-black text-white/50 uppercase tracking-widest text-center">Estimated Total Value</p>
-                 <div className="text-4xl font-black text-center tracking-tighter text-white">
-                    {formatCurrency(totalAmount)}
-                 </div>
+              
+              <div className="pt-4 flex flex-col items-center">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Estimated Total Value</p>
+                  <p className="text-4xl font-black text-white">{formatCurrency(grandTotalAmount)}</p>
               </div>
 
               <button 
@@ -603,7 +594,14 @@ export default function SmallScalePage() {
                    </button>
                  )}
                  <button 
-                   onClick={fetchLogs}
+                   onClick={handleClearFilters}
+                   className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all shadow-sm"
+                 >
+                    <X className="w-4 h-4" />
+                    Clear
+                 </button>
+                 <button 
+                   onClick={() => fetchLogs()}
                    className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-all shadow-sm"
                  >
                     <Search className="w-4 h-4" />
@@ -715,8 +713,14 @@ export default function SmallScalePage() {
                       </td>
                       <td className="px-6 py-4 text-sm font-bold text-slate-600">{log.subcategory || '-'}</td>
                       <td className="px-6 py-4">
-                        <span className="text-sm font-black text-slate-900">{log.total_weight}</span>
-                        <span className="text-[10px] ml-1 font-bold text-muted-foreground">KG</span>
+                        <div>
+                          <span className="text-sm font-black text-slate-900">{log.total_weight}</span>
+                          <span className="text-[10px] ml-1 font-bold text-muted-foreground">KG</span>
+                        </div>
+                        <div className="mt-0.5">
+                          <span className="text-xs font-bold text-slate-600">{(log.total_weight / 100).toFixed(2)}</span>
+                          <span className="text-[10px] ml-1 font-bold text-muted-foreground">Qtl</span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={cn(
@@ -737,7 +741,7 @@ export default function SmallScalePage() {
                            <button className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all" title="View">
                              <Eye className="w-4 h-4" />
                            </button>
-                           <button className="p-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Print">
+                           <button onClick={() => setSelectedSlip(mapLogToSlip(log))} className="p-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Print">
                              <Printer className="w-4 h-4" />
                            </button>
                            {user?.role !== 'staff' && (
@@ -792,6 +796,12 @@ export default function SmallScalePage() {
           )}
         </CardContent>
       </Card>
+
+      <SlipModal 
+        isOpen={!!selectedSlip} 
+        slip={selectedSlip} 
+        onClose={() => setSelectedSlip(null)} 
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { 
   comparePassword, 
@@ -8,8 +8,10 @@ import {
 } from '@/lib/security';
 import { createToken } from '@/lib/auth-utils';
 
-export async function POST(request: Request) {
-  const ip = request.headers.get('x-forwarded-for') || 'unknown';
+export async function POST(request: NextRequest) {
+  // Use x-forwarded-for
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 'unknown';
   
   // Rate Limiting
   if (!checkRateLimit(ip, 5, 60000)) {

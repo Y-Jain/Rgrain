@@ -1,13 +1,25 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { verifyToken } from '@/lib/auth-utils';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get('branchId');
     const date = searchParams.get('date'); // YYYY-MM-DD
     const month = searchParams.get('month'); // MM
     const year = searchParams.get('year'); // YYYY
+
+    // SECURITY FIX: Enforce Tenant Boundaries
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (payload.role !== 'superadmin' && branchId && payload.branchId !== branchId) {
+      return NextResponse.json({ error: 'Forbidden: Cannot view attendance of other branches' }, { status: 403 });
+    }
 
     let query = db('attendance')
       .join('users', 'attendance.user_id', 'users.id')
@@ -32,8 +44,17 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // SECURITY FIX: Enforce Admin/Superadmin RBAC for Attendance Submission
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload || (payload.role !== 'superadmin' && payload.role !== 'admin')) {
+      return NextResponse.json({ error: 'Forbidden: Only admins can submit attendance' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { attendanceRecords } = body; // Array of { user_id, date, status, remarks }
 

@@ -42,6 +42,7 @@ export default function ApprovalsPage() {
   const [editMobile, setEditMobile] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editVehicle, setEditVehicle] = useState("");
+  const [editTollkata, setEditTollkata] = useState("");
 
   useEffect(() => {
     fetchPendingSlips();
@@ -58,6 +59,7 @@ export default function ApprovalsPage() {
       setEditMobile(selectedSlip.farmer_mobile || selectedSlip.party_mobile || "");
       setEditAddress(selectedSlip.farmer_village || selectedSlip.address || "");
       setEditVehicle(selectedSlip.vehicle_no || "");
+      setEditTollkata(selectedSlip.tollkata_charges?.toString() || "0");
       setIsEditing(false);
     }
   }, [selectedSlip]);
@@ -132,6 +134,7 @@ export default function ApprovalsPage() {
           payload.net_weight = parseFloat(editNetWeight);
           payload.rate_per_mt = parseFloat(editRate);
           payload.payable_amount = calculatedAmount;
+          payload.tollkata_charges = parseFloat(editTollkata) || 0;
           payload.farmer_name = editName;
           payload.farmer_mobile = editMobile;
           payload.address = editAddress;
@@ -267,6 +270,12 @@ export default function ApprovalsPage() {
                       )}>
                         {item.type === 'WEIGHBRIDGE' ? 'WB' : 'SS'}
                       </span>
+                      <span className={cn(
+                        "text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter",
+                        item.entry_type === 'OUT' ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                      )}>
+                        {item.entry_type === 'OUT' ? 'OUTWARD' : 'INWARD'}
+                      </span>
                     </div>
                     <span className="text-[10px] font-black text-muted-foreground uppercase">
                       {format(new Date(item.created_at), "h:mm a")}
@@ -277,7 +286,7 @@ export default function ApprovalsPage() {
                     <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-70">
                       {item.grain_category} • {Number(item.net_weight).toFixed(2)} kg ({(Number(item.net_weight) / 100).toFixed(2)} Qtl)
                     </div>
-                    <div className="text-sm font-black text-slate-700 tracking-tighter">{formatCurrency(item.payable_amount)}</div>
+                    <div className="text-sm font-black text-slate-700 tracking-tighter">{formatCurrency(parseFloat(item.payable_amount) + (item.type === 'WEIGHBRIDGE' ? (parseFloat(item.tollkata_charges) || 0) : 0))}</div>
                   </div>
                 </div>
               ))
@@ -317,6 +326,12 @@ export default function ApprovalsPage() {
                         )}>
                           {selectedSlip.type === 'WEIGHBRIDGE' ? 'Weighbridge' : 'Small Scale'}
                         </span>
+                        <span className={cn(
+                          "text-[10px] px-2 py-0.5 rounded-lg font-black uppercase tracking-widest",
+                          selectedSlip.entry_type === 'OUT' ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                        )}>
+                          {selectedSlip.entry_type === 'OUT' ? 'OUTWARD' : 'INWARD'}
+                        </span>
                       </div>
                       <CardDescription className="text-xs font-bold uppercase tracking-widest mt-1 opacity-70">Reviewing Record</CardDescription>
                     </div>
@@ -330,6 +345,7 @@ export default function ApprovalsPage() {
                         setEditMobile(selectedSlip.farmer_mobile || selectedSlip.party_mobile || "");
                         setEditAddress(selectedSlip.farmer_village || selectedSlip.address || "");
                         setEditVehicle(selectedSlip.vehicle_no || "");
+                        setEditTollkata(selectedSlip.tollkata_charges?.toString() || "0");
                         setIsEditing(!isEditing);
                       }}
                       className={cn(
@@ -470,11 +486,29 @@ export default function ApprovalsPage() {
                               </span>
                             )}
                           </div>
+                          {selectedSlip.type === 'WEIGHBRIDGE' && (isEditing ? true : (parseFloat(selectedSlip.tollkata_charges) || 0) > 0) && (
+                            <div className="flex justify-between items-center mt-2">
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Vehicle Charges</span>
+                              {isEditing ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] font-black opacity-50">+ ₹</span>
+                                  <input 
+                                    type="number" 
+                                    value={editTollkata}
+                                    onChange={(e) => setEditTollkata(e.target.value)}
+                                    className="w-20 bg-white/10 border border-white/20 rounded-lg px-2 py-1 outline-none focus:border-primary text-sm font-black text-amber-500"
+                                  />
+                                </div>
+                              ) : (
+                                <span className="text-xs font-black tracking-tight text-amber-500">+{formatCurrency(parseFloat(selectedSlip.tollkata_charges))}</span>
+                              )}
+                            </div>
+                          )}
                           <hr className="border-white/10" />
                           <div className="flex justify-between items-end">
                             <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Payable</span>
                             <span className="text-3xl sm:text-4xl font-black text-primary tracking-tighter">
-                              {formatCurrency(isEditing ? calculatedAmount : selectedSlip.payable_amount)}
+                              {formatCurrency((isEditing ? calculatedAmount : parseFloat(selectedSlip.payable_amount)) + (selectedSlip.type === 'WEIGHBRIDGE' ? (isEditing ? (parseFloat(editTollkata) || 0) : (parseFloat(selectedSlip.tollkata_charges) || 0)) : 0))}
                             </span>
                           </div>
                         </div>

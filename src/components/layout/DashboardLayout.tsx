@@ -178,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </AnimatePresence>
           </div>
           {isMobile && isSidebarOpen && (
-            <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-muted rounded-xl transition-colors">
+            <button aria-label="Close Sidebar" onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-muted rounded-xl transition-colors">
               <X className="w-6 h-6 text-muted-foreground" />
             </button>
           )}
@@ -275,6 +275,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-border/50 flex items-center justify-between px-4 sm:px-8 shrink-0 z-40">
           <div className="flex items-center gap-3 sm:gap-6">
             <button 
+              aria-label="Toggle Sidebar"
               onClick={toggleSidebar}
               className="p-3 bg-muted/50 hover:bg-primary/10 hover:text-primary rounded-2xl transition-all shadow-sm group"
             >
@@ -293,7 +294,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            <button className="p-3 hover:bg-muted rounded-2xl relative transition-all group border border-transparent hover:border-border">
+            <button aria-label="Notifications" className="p-3 hover:bg-muted rounded-2xl relative transition-all group border border-transparent hover:border-border">
               <Bell className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
               <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-destructive rounded-full border-2 border-white animate-pulse" />
             </button>
@@ -302,6 +303,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             
             <div className="relative">
               <button 
+                aria-label="User Menu"
+                aria-expanded={showUserDropdown}
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
                 className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-2xl transition-all outline-none"
               >

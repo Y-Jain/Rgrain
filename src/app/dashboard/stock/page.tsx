@@ -24,6 +24,7 @@ import {
 import { cn, formatCurrency } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function StockManagementPage() {
   const { user } = useAuthStore();
@@ -135,6 +136,30 @@ export default function StockManagementPage() {
     });
   }, [data]);
 
+  const exportToExcel = () => {
+    if (!data?.breakdown || data.breakdown.length === 0) {
+      toast.error("No data to export");
+      return;
+    }
+    
+    const exportData = data.breakdown.map((item: any) => ({
+      "Category": item.category,
+      "Subcategory": item.subcategory || "GENERAL",
+      "Inward (Qtl)": Number(item.inVolume.toFixed(2)),
+      "Avg In Rate (Rs)": Number((item.inVolume > 0 ? item.inAmount / item.inVolume : 0).toFixed(2)),
+      "Outward (Qtl)": Number(item.outVolume.toFixed(2)),
+      "Avg Out Rate (Rs)": Number((item.outVolume > 0 ? item.outAmount / item.outVolume : 0).toFixed(2)),
+      "Net Stock (Qtl)": Number((item.inVolume - item.outVolume).toFixed(2))
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Stock_Analysis");
+    
+    XLSX.writeFile(workbook, `Stock_Report_${filters.startDate}_to_${filters.endDate}.xlsx`);
+    toast.success("Excel report downloaded!");
+  };
+
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -144,10 +169,30 @@ export default function StockManagementPage() {
         </div>
         
         <div className="flex items-center gap-3">
-           <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-              <button className="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-900 text-white shadow-lg flex items-center gap-2">
+           <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm gap-1">
+              <button 
+                onClick={() => setFilters({ ...filters, startDate: '', endDate: '' })}
+                className={cn(
+                  "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all",
+                  filters.startDate === '' && filters.endDate === ''
+                    ? "bg-primary text-white shadow-md"
+                    : "text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                 <Layers className="w-3.5 h-3.5" />
+                 Overall
+              </button>
+              <button 
+                onClick={() => setFilters({ ...filters, startDate: new Date().toISOString().split('T')[0], endDate: new Date().toISOString().split('T')[0] })}
+                className={cn(
+                  "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all",
+                  filters.startDate !== '' || filters.endDate !== ''
+                    ? "bg-slate-900 text-white shadow-md"
+                    : "text-slate-600 hover:bg-slate-50"
+                )}
+              >
                  <Box className="w-3.5 h-3.5" />
-                 Live Stock
+                 Period
               </button>
            </div>
         </div>
@@ -378,7 +423,7 @@ export default function StockManagementPage() {
               <CardDescription>Detailed inward/outward performance by grain variety.</CardDescription>
            </div>
            {user?.role !== 'staff' && (
-             <button className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-100 transition-all border border-slate-200">
+             <button onClick={exportToExcel} title="Export to Excel" className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-100 transition-all border border-slate-200">
                 <Download className="w-5 h-5" />
              </button>
            )}
