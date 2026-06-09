@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     // Server-side enforcement for non-superadmins
     if (payload.role !== 'superadmin' && payload.branchId) {
-      branchId = payload.branchId;
+      branchId = payload.branchId as string;
     }
 
     if (search) {
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     
     let branchId = body.branchId;
     if (payload.role !== 'superadmin' && payload.branchId) {
-      branchId = payload.branchId;
+      branchId = payload.branchId as string;
     }
 
     // Encrypt sensitive data before insertion
