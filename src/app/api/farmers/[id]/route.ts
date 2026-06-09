@@ -22,6 +22,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     const body = await request.json();
     
+    // Ensure the farmer belongs to the user's branch if not superadmin
+    if (payload.role !== 'superadmin' && payload.branchId) {
+      const existingFarmer = await db('farmers').where({ id, branch_id: payload.branchId }).first();
+      if (!existingFarmer) {
+        return NextResponse.json({ error: 'Forbidden: Farmer not found in your branch' }, { status: 403 });
+      }
+    }
+    
     const name = sanitizeInput(body.name) || 'Unknown Customer';
     const mobile = body.mobile || `NA-${Date.now()}`;
     const village = sanitizeInput(body.village);
@@ -69,6 +77,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     }
 
     const { id } = await params;
+
+    // Ensure the farmer belongs to the user's branch if not superadmin
+    if (payload.role !== 'superadmin' && payload.branchId) {
+      const existingFarmer = await db('farmers').where({ id, branch_id: payload.branchId }).first();
+      if (!existingFarmer) {
+        return NextResponse.json({ error: 'Forbidden: Farmer not found in your branch' }, { status: 403 });
+      }
+    }
 
     const deleted = await db('farmers').where({ id }).delete();
 

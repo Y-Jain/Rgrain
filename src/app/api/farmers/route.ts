@@ -15,11 +15,21 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '15');
     const search = searchParams.get('search') || '';
+    let branchId = searchParams.get('branchId');
     const offset = (page - 1) * limit;
+
+    // Server-side enforcement for non-superadmins
+    if (payload.role !== 'superadmin' && payload.branchId) {
+      branchId = payload.branchId;
+    }
 
     if (search) {
       // Fetch recent records to perform in-memory decryption and multi-field search
-      const allFarmers = await db('farmers').select('*').orderBy('created_at', 'desc').limit(5000);
+      let query = db('farmers').select('*').orderBy('created_at', 'desc').limit(5000);
+      if (branchId) {
+        query = query.where({ branch_id: branchId });
+      }
+      const allFarmers = await query;
       const decrypted = allFarmers.map(f => {
         try {
           return {
@@ -51,6 +61,10 @@ export async function GET(request: NextRequest) {
     } else {
       // Normal pagination when no search term
       let baseQuery = db('farmers');
+      
+      if (branchId) {
+        baseQuery = baseQuery.where({ branch_id: branchId });
+      }
 
       const totalCountQuery = await baseQuery.clone().count('id as count').first();
       const totalCount = parseInt(totalCountQuery?.count as string || '0');
@@ -105,6 +119,11 @@ export async function POST(request: NextRequest) {
     const district = sanitizeInput(body.district);
     const state = sanitizeInput(body.state);
     const aadhaar_no = body.aadhaar_no;
+    
+    let branchId = body.branchId;
+    if (payload.role !== 'superadmin' && payload.branchId) {
+      branchId = payload.branchId;
+    }
 
     // Encrypt sensitive data before insertion
     const [newFarmer] = await db('farmers').insert({
@@ -114,7 +133,8 @@ export async function POST(request: NextRequest) {
       district,
       state,
       aadhaar_no: encryptData(aadhaar_no),
-      credit_score: 0
+      credit_score: 0,
+      branch_id: branchId || null
     }).returning('*');
 
     // Decrypt for response
