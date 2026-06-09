@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { verifyToken } from '@/lib/auth-utils';
+import { checkRateLimit } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,6 +48,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`ledgers_post_${ip}`, 60, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     const body = await request.json();
     const { branchId, type, narration, amount, relatedId, entryType } = body; // entryType: 'DEBIT' or 'CREDIT'
 

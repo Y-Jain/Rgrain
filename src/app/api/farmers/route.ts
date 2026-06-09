@@ -1,9 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { encryptData, decryptData, sanitizeInput } from '@/lib/security';
+import { encryptData, decryptData, sanitizeInput, checkRateLimit } from '@/lib/security';
+import { verifyToken } from '@/lib/auth-utils';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '15');
@@ -78,8 +85,19 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`farmers_post_${ip}`, 60, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
+    const token = request.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const payload = await verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await request.json();
     const name = sanitizeInput(body.name) || 'Unknown Customer';
     const mobile = body.mobile || `NA-${Date.now()}`;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { hashPassword, sanitizeInput } from '@/lib/security';
+import { hashPassword, sanitizeInput, checkRateLimit } from '@/lib/security';
 import { verifyToken } from '@/lib/auth-utils';
 
 export async function GET(request: NextRequest) {
@@ -33,6 +33,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`staff_post_${ip}`, 10, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     // SECURITY FIX: Enforce Superadmin RBAC for Staff Creation
     const token = request.cookies.get('auth-token')?.value;
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -89,6 +94,11 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`staff_patch_${ip}`, 10, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     // SECURITY FIX: Enforce Superadmin RBAC for Staff Modification
     const token = request.cookies.get('auth-token')?.value;
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

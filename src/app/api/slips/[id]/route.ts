@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { analyticsCache } from '@/lib/analytics-cache';
 import { verifyToken } from '@/lib/auth-utils';
+import { checkRateLimit } from '@/lib/security';
 
 export async function GET(
   request: NextRequest,
@@ -36,6 +37,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`slips_patch_${ip}`, 60, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { status, rejectReason, net_weight, rate_per_mt, payable_amount, tollkata_charges, scaleType, farmer_name, farmer_mobile, address, vehicle_no, items } = body;
@@ -68,7 +74,7 @@ export async function PATCH(
       if (net_weight !== undefined) updateData.total_weight = net_weight;
       if (rate_per_mt !== undefined) updateData.price_per_unit = rate_per_mt;
       if (net_weight !== undefined && rate_per_mt !== undefined) {
-        updateData.total_amount = (net_weight / 100) * rate_per_mt;
+        updateData.total_amount = (net_weight/100) * rate_per_mt;
       } else if (payable_amount !== undefined) {
         updateData.total_amount = payable_amount;
       }
@@ -76,10 +82,57 @@ export async function PATCH(
       if (farmer_mobile !== undefined) updateData.party_mobile = farmer_mobile;
       if (address !== undefined) updateData.address = address;
 
-      const [updatedSS] = await db('small_scale_entries')
-        .where('id', id)
-        .update(updateData)
-        .returning('*');
+      const updatedSS = await db.transaction(async (trx) => {
+        const [ss] = await trx('small_scale_entries')
+          .where('id', id)
+          .update(updateData)
+          .returning('*');
+        
+        if (!ss) return null;
+
+        if (status === 'APPROVED') {
+          if (ss.entry_type === 'OUT') {
+            await trx('weighbridge_settings').where({ branch_id: ss.branch_id }).forUpdate().first();
+            const stockIn = await trx('weighbridge_slips').where({ branch_id: ss.branch_id, grain_category: ss.grain_category, status: 'APPROVED', entry_type: 'IN', is_internal: true }).sum('net_weight as sum').first();
+            const stockOut = await trx('weighbridge_slips').where({ branch_id: ss.branch_id, grain_category: ss.grain_category, status: 'APPROVED', entry_type: 'OUT', is_internal: true }).sum('net_weight as sum').first();
+            const ssStockIn = await trx('small_scale_entries').where({ branch_id: ss.branch_id, grain_category: ss.grain_category, status: 'APPROVED', entry_type: 'IN' }).sum('total_weight as sum').first();
+            const ssStockOut = await trx('small_scale_entries').where({ branch_id: ss.branch_id, grain_category: ss.grain_category, status: 'APPROVED', entry_type: 'OUT' }).sum('total_weight as sum').first();
+
+            const availableWb = (parseFloat(stockIn?.sum as string || '0')) - (parseFloat(stockOut?.sum as string || '0'));
+            const availableSs = (parseFloat(ssStockIn?.sum as string || '0')) - (parseFloat(ssStockOut?.sum as string || '0'));
+            const available = availableWb + availableSs;
+            
+            if (parseFloat(ss.total_weight) > available) {
+              throw new Error(`Insufficient internal stock for ${ss.grain_category}. Available: ${(available/100).toFixed(3)} Qtl`);
+            }
+          }
+
+          const existingLedger = await trx('ledgers').where({ related_id: ss.id }).first();
+          if (!existingLedger) {
+            const ledgerType = 'INTERNAL';
+            const lastEntry = await trx('ledgers')
+              .where({ branch_id: ss.branch_id, ledger_type: ledgerType })
+              .orderBy('created_at', 'desc')
+              .forUpdate()
+              .first();
+            
+            const lastBalance = parseFloat(lastEntry?.balance || '0');
+            const amount = parseFloat(ss.total_amount) || 0;
+            const newBalance = ss.entry_type === 'IN' ? lastBalance + amount : lastBalance - amount;
+
+            await trx('ledgers').insert({
+              branch_id: ss.branch_id,
+              ledger_type: ledgerType,
+              related_id: ss.id,
+              narration: `Small Scale ${ss.entry_type === 'IN' ? 'Purchase' : 'Sale'} - SS-${ss.id.substring(0, 8)} (${ss.grain_category})`,
+              debit: ss.entry_type === 'OUT' ? amount : 0,
+              credit: ss.entry_type === 'IN' ? amount : 0,
+              balance: newBalance
+            });
+          }
+        }
+        return ss;
+      });
       
       if (!updatedSS) return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
       analyticsCache.clear();
@@ -107,6 +160,22 @@ export async function PATCH(
         if (!slip) return null;
 
         if (status === 'APPROVED') {
+          if (slip.entry_type === 'OUT' && slip.is_internal) {
+            await trx('weighbridge_settings').where({ branch_id: slip.branch_id }).forUpdate().first();
+            const stockIn = await trx('weighbridge_slips').where({ branch_id: slip.branch_id, grain_category: slip.grain_category, status: 'APPROVED', entry_type: 'IN', is_internal: true }).sum('net_weight as sum').first();
+            const stockOut = await trx('weighbridge_slips').where({ branch_id: slip.branch_id, grain_category: slip.grain_category, status: 'APPROVED', entry_type: 'OUT', is_internal: true }).sum('net_weight as sum').first();
+            const ssStockIn = await trx('small_scale_entries').where({ branch_id: slip.branch_id, grain_category: slip.grain_category, status: 'APPROVED', entry_type: 'IN' }).sum('total_weight as sum').first();
+            const ssStockOut = await trx('small_scale_entries').where({ branch_id: slip.branch_id, grain_category: slip.grain_category, status: 'APPROVED', entry_type: 'OUT' }).sum('total_weight as sum').first();
+
+            const availableWb = (parseFloat(stockIn?.sum as string || '0')) - (parseFloat(stockOut?.sum as string || '0'));
+            const availableSs = (parseFloat(ssStockIn?.sum as string || '0')) - (parseFloat(ssStockOut?.sum as string || '0'));
+            const available = availableWb + availableSs;
+            
+            if (parseFloat(slip.net_weight) > available) {
+              throw new Error(`Insufficient internal stock for ${slip.grain_category}. Available: ${(available/100).toFixed(3)} Qtl`);
+            }
+          }
+
           // 1. Check if ledger entry already exists to avoid duplicates
           const existingLedger = await trx('ledgers').where({ related_id: slip.id }).first();
           if (!existingLedger) {
@@ -137,8 +206,18 @@ export async function PATCH(
         // Handle Farmer detail updates
         if (slip.farmer_id && (farmer_name !== undefined || farmer_mobile !== undefined)) {
           const farmerUpdate: any = {};
-          if (farmer_name !== undefined) farmerUpdate.name = farmer_name;
-          if (farmer_mobile !== undefined) farmerUpdate.mobile = farmer_mobile;
+          if (farmer_name !== undefined) {
+             farmerUpdate.name = farmer_name.trim() || 'Unknown Farmer';
+          }
+          if (farmer_mobile !== undefined) {
+             const m = farmer_mobile.trim();
+             if (m) {
+                farmerUpdate.mobile = m;
+             } else {
+                // Generate a unique NA- string if they cleared the field
+                farmerUpdate.mobile = `NA-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+             }
+          }
           await trx('farmers').where('id', slip.farmer_id).update(farmerUpdate);
         }
 
@@ -159,6 +238,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`slips_delete_${ip}`, 60, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const scaleType = searchParams.get('scaleType');

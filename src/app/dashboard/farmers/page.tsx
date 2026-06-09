@@ -366,7 +366,7 @@ function FarmersPageInner() {
                     <p className="text-xs text-muted-foreground">{editingFarmerId ? "Update farmer details and KYC." : "Onboard a new farmer to the branch database."}</p>
                  </div>
               </div>
-              <button onClick={() => { setShowRegisterModal(false); setEditingFarmerId(null); setNewFarmer({ name: "", mobile: "", village: "", district: "", state: "", aadhaar: "" }); }} className="p-2 hover:bg-muted rounded-xl transition-all">
+              <button aria-label="Close Modal" onClick={() => { setShowRegisterModal(false); setEditingFarmerId(null); setNewFarmer({ name: "", mobile: "", village: "", district: "", state: "", aadhaar: "" }); }} className="p-2 hover:bg-muted rounded-xl transition-all">
                  <X className="w-6 h-6 text-muted-foreground" />
               </button>
             </div>
@@ -374,8 +374,9 @@ function FarmersPageInner() {
             <form onSubmit={handleSave} className="p-8 space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Full Name</label>
+                     <label htmlFor="farmerName" className="text-xs font-bold text-muted-foreground uppercase">Full Name</label>
                      <input 
+                        id="farmerName"
                         type="text" 
                         className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="e.g. Baldev Singh"
@@ -384,8 +385,9 @@ function FarmersPageInner() {
                      />
                   </div>
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Mobile Number</label>
+                     <label htmlFor="farmerMobile" className="text-xs font-bold text-muted-foreground uppercase">Mobile Number</label>
                      <input 
+                        id="farmerMobile"
                         type="tel" 
                         className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="10-digit mobile"
@@ -397,8 +399,9 @@ function FarmersPageInner() {
 
                <div className="grid grid-cols-1 gap-6">
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-muted-foreground uppercase">Village / Area</label>
+                     <label htmlFor="farmerVillage" className="text-xs font-bold text-muted-foreground uppercase">Village / Area</label>
                      <input 
+                        id="farmerVillage"
                         type="text" 
                         className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="e.g. Rampur"

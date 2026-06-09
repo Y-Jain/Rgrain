@@ -9,9 +9,9 @@ import {
 import { createToken } from '@/lib/auth-utils';
 
 export async function POST(request: NextRequest) {
-  // Use NextRequest.ip first (provided by hosting platform), fallback to parsing the first IP from x-forwarded-for
+  // Use x-forwarded-for
   const forwardedFor = request.headers.get('x-forwarded-for');
-  const ip = request.ip || (forwardedFor ? forwardedFor.split(',')[0].trim() : 'unknown');
+  const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 'unknown';
   
   // Rate Limiting
   if (!checkRateLimit(ip, 5, 60000)) {

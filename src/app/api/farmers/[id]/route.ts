@@ -1,12 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { encryptData, sanitizeInput } from '@/lib/security';
+import { encryptData, sanitizeInput, checkRateLimit } from '@/lib/security';
 import { verifyToken } from '@/lib/auth-utils';
 
-export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`farmers_put_${ip}`, 60, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     // Basic RBAC for Admin/Superadmin
-    const token = request.headers.get('cookie')?.split('auth-token=')[1]?.split(';')[0];
+    const token = request.cookies.get('auth-token')?.value;
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     
     const payload = await verifyToken(token);
@@ -47,10 +52,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (!checkRateLimit(`farmers_del_${ip}`, 60, 60000)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     // Basic RBAC for Admin/Superadmin
-    const token = request.headers.get('cookie')?.split('auth-token=')[1]?.split(';')[0];
+    const token = request.cookies.get('auth-token')?.value;
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     
     const payload = await verifyToken(token);

@@ -81,7 +81,12 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/rates');
       const rates = await res.json();
-      setCategories(rates);
+      if (Array.isArray(rates)) {
+        setCategories(rates);
+      } else {
+        console.error("Rates API returned non-array:", rates);
+        setCategories([]);
+      }
     } catch (e) {
       console.error("Failed to fetch categories", e);
     }
@@ -527,7 +532,7 @@ export default function DashboardPage() {
               </div>
               <div className="mt-4">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{kpi.title}</p>
-                <h3 className="text-2xl font-black mt-1 font-outfit text-slate-900">{kpi.value}</h3>
+                <h3 className="text-xl xl:text-2xl font-black mt-1 font-outfit text-slate-900 tracking-tighter truncate" title={kpi.value as string}>{kpi.value}</h3>
               </div>
             </CardContent>
           </Card>
@@ -543,7 +548,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={data?.avgRateTrend || []}>
                   <defs>
                     <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
@@ -607,7 +612,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[250px] sm:h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
@@ -659,7 +664,7 @@ export default function DashboardPage() {
             <div className="h-[280px] w-full relative">
               {categoryData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={categoryData}
@@ -718,7 +723,7 @@ export default function DashboardPage() {
             <div className="h-[280px] w-full relative">
               {sourceData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={sourceData}

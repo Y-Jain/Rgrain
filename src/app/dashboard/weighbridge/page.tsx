@@ -81,7 +81,7 @@ export default function WeighbridgePage() {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [globalTotals, setGlobalTotals] = useState({ totalWeight: 0, totalAmount: 0 });
+  const [globalTotals, setGlobalTotals] = useState({ totalWeight: 0, totalAmount: 0, totalCharges: 0 });
   
   const [formData, setFormData] = useState({
     farmerName: "",
@@ -189,7 +189,7 @@ export default function WeighbridgePage() {
         setSlips(data.data || []);
         setTotalCount(data.totalCount || 0);
         setTotalPages(data.totalPages || 1);
-        setGlobalTotals(data.totals || { totalWeight: 0, totalAmount: 0 });
+        setGlobalTotals(data.totals || { totalWeight: 0, totalAmount: 0, totalCharges: 0 });
         return data.data;
       }
     } catch (error) {
@@ -412,7 +412,7 @@ export default function WeighbridgePage() {
   const totals = useMemo(() => {
     const totalWeight = globalTotals.totalWeight || 0;
     const totalAmount = globalTotals.totalAmount || 0;
-    const totalCharges = slips.reduce((sum, s) => sum + (parseFloat(s.tollkata_charges) || 0), 0);
+    const totalCharges = globalTotals.totalCharges || 0;
     const totalQtl = totalWeight / 100;
     const avgRate = totalQtl > 0 ? totalAmount / totalQtl : 0;
 
@@ -1046,7 +1046,7 @@ export default function WeighbridgePage() {
                       type="date" 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.dateFrom}
-                      onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, dateFrom: e.target.value}) }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1055,7 +1055,7 @@ export default function WeighbridgePage() {
                       type="date" 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.dateTo}
-                      onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, dateTo: e.target.value}) }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1063,7 +1063,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.category}
-                      onChange={(e) => setFilters({...filters, category: e.target.value, subcategory: ""})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, category: e.target.value, subcategory: ""}) }}
                     >
                       <option value="">All Categories</option>
                       {availableRates.map(c => <option key={c.id} value={c.category_name}>{c.category_name}</option>)}
@@ -1074,7 +1074,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none disabled:opacity-50"
                       value={filters.subcategory}
-                      onChange={(e) => setFilters({...filters, subcategory: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, subcategory: e.target.value}) }}
                       disabled={!filters.category}
                     >
                       <option value="">All Subcategories</option>
@@ -1086,7 +1086,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.status}
-                      onChange={(e) => setFilters({...filters, status: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, status: e.target.value}) }}
                     >
                       <option value="">All Status</option>
                       <option value="APPROVED">Approved</option>
@@ -1099,7 +1099,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.type}
-                      onChange={(e) => setFilters({...filters, type: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, type: e.target.value}) }}
                     >
                       <option value="ALL">All Entries</option>
                       <option value="INTERNAL">Internal Only</option>
@@ -1111,7 +1111,7 @@ export default function WeighbridgePage() {
                     <select 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
                       value={filters.scaleSource}
-                      onChange={(e) => setFilters({...filters, scaleSource: e.target.value})}
+                      onChange={(e) => { setCurrentPage(1); setFilters({...filters, scaleSource: e.target.value}) }}
                     >
                       <option value="ALL">All Combined</option>
                       <option value="Weighbridge">Weighbridge</option>
@@ -1187,7 +1187,7 @@ export default function WeighbridgePage() {
                               </div>
                             </td>
                             <td className="px-6 py-6 text-right">
-                              <p className="text-xs font-black text-slate-900">{(slip.net_weight / 100).toFixed(2)} <span className="text-[10px] opacity-40">Qtl</span></p>
+                              <p className="text-xs font-black text-slate-900">{((parseFloat(slip.net_weight as any) || 0) / 100).toFixed(2)} <span className="text-[10px] opacity-40">Qtl</span></p>
                             </td>
                             <td className="px-6 py-6 text-right">
                               <p className="text-xs font-black text-slate-900">{formatCurrency(slip.rate_per_mt || 0)}</p>
@@ -1242,8 +1242,8 @@ export default function WeighbridgePage() {
                                   <button 
                                     onClick={() => { 
                                       let printSlip = slip;
-                                      if (slip.scale_type !== 'Small Scale' && slip.serial_number) {
-                                        const related = slips.filter(s => s.serial_number === slip.serial_number && s.scale_type !== 'Small Scale');
+                                      if (slip.serial_number) {
+                                        const related = slips.filter(s => s.serial_number === slip.serial_number && s.scale_type === slip.scale_type);
                                         if (related.length > 1) {
                                           // Sort by slip_no to ensure correct order
                                           const sortedRelated = [...related].sort((a, b) => (a.slip_no || '').localeCompare(b.slip_no || ''));
@@ -1258,29 +1258,29 @@ export default function WeighbridgePage() {
                                     <Eye className="w-3.5 h-3.5" />
                                   </button>
                                   {(user as any)?.role !== 'staff' && (
-                                     <>
-                                       <button 
-                                         onClick={() => {
-                                           const isWb = slip.scale_type !== 'Small Scale';
-                                           const currentWeight = isWb ? slip.net_weight : slip.total_weight;
-                                           const currentRate = isWb ? slip.rate_per_mt : slip.price_per_unit;
-                                           setEditForm({
-                                             id: slip.id,
-                                             scaleType: slip.scale_type || 'Weighbridge',
-                                             farmer_name: slip.farmer_name || slip.party_name || '',
-                                             farmer_mobile: slip.farmer_mobile || slip.party_mobile || '',
-                                             address: slip.address || '',
-                                             vehicle_no: slip.vehicle_no || '',
-                                             net_weight: currentWeight?.toString() || '0',
-                                             rate_per_mt: currentRate?.toString() || '0'
-                                           });
-                                           setIsEditModalOpen(true);
-                                         }}
-                                         className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Edit Record"
-                                       >
-                                         <Edit className="w-3.5 h-3.5" />
-                                       </button>
-                                       <button 
+                                     <button 
+                                       onClick={() => {
+                                         const currentWeight = slip.net_weight;
+                                         const currentRate = slip.rate_per_mt;
+                                         setEditForm({
+                                           id: slip.id,
+                                           scaleType: slip.scale_type || 'Weighbridge',
+                                           farmer_name: slip.farmer_name || slip.party_name || '',
+                                           farmer_mobile: slip.farmer_mobile || slip.party_mobile || '',
+                                           address: slip.address || '',
+                                           vehicle_no: slip.vehicle_no || '',
+                                           net_weight: currentWeight?.toString() || '0',
+                                           rate_per_mt: currentRate?.toString() || '0'
+                                         });
+                                         setIsEditModalOpen(true);
+                                       }}
+                                       className="p-2 hover:bg-white rounded-lg border border-slate-200 text-slate-600 shadow-sm cursor-pointer hover:scale-105 active:scale-95 transition-all" title="Edit Record"
+                                     >
+                                       <Edit className="w-3.5 h-3.5" />
+                                     </button>
+                                   )}
+                                   {(user as any)?.role !== 'staff' && (
+                                     <button 
                                          onClick={async () => {
                                            if (!confirm(`Permanently remove entry #${slip.slip_no || slip.serial_number}?`)) return;
                                            try {
@@ -1301,7 +1301,6 @@ export default function WeighbridgePage() {
                                        >
                                          <Trash2 className="w-3.5 h-3.5" />
                                        </button>
-                                     </>
                                    )}
                                </div>
                             </td>
@@ -1553,7 +1552,7 @@ export default function WeighbridgePage() {
 
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">Net Weight ({editForm.scaleType !== 'Small Scale' ? 'scaled unit' : 'Qtl'})</label>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">Net Weight ({editForm.scaleType !== 'Small Scale' ? 'scaled unit' : 'kg'})</label>
                   <input 
                     type="number" 
                     step="any"
@@ -1583,7 +1582,7 @@ export default function WeighbridgePage() {
               </button>
               <button 
                 onClick={async () => {
-                  if (editForm.farmer_mobile.trim()) {
+                  if (editForm.farmer_mobile.trim() && !editForm.farmer_mobile.trim().startsWith('NA-')) {
                     const rawMobile = editForm.farmer_mobile.trim();
                     const digitsOnly = rawMobile.replace(/[^0-9]/g, '');
                     let cleaned = digitsOnly;

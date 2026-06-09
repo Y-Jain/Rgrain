@@ -16,6 +16,11 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [printFormat, setPrintFormat] = useState<'A4' | 'A5' | 'THERMAL'>('A4');
 
+  const getWeightInQtl = (weight: number | string | undefined | null) => {
+    const num = parseFloat(weight as string) || 0;
+    return (num / 100).toFixed(2);
+  };
+
   const getPageStyle = () => {
     if (printFormat === 'THERMAL') {
       return `@page { size: 80mm auto; margin: 0mm; }`;
@@ -96,7 +101,7 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
                           <p><strong>{idx + 1}. VEHICLE:</strong> {item.vehicle_no}</p>
                           <p><strong>GRAIN:</strong> {item.grain_category} ({item.subcategory || '-'})</p>
                           <div className="flex justify-between">
-                            <span>NET WT: {(item.net_weight / 100).toFixed(2)} Qtl</span>
+                            <span>NET WT: {getWeightInQtl(item.net_weight)} Qtl</span>
                             <span>RATE: {formatCurrency(item.rate_per_mt)}</span>
                           </div>
                           <div className="flex justify-between font-bold">
@@ -130,7 +135,7 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
 
                     <div className="pb-2 border-b border-black border-dashed flex justify-between text-[10px] font-bold mt-1">
                        <span>NET WEIGHT:</span>
-                       <span>{(slip.net_weight / 100).toFixed(2)} Qtl</span>
+                       <span>{getWeightInQtl(slip.net_weight)} Qtl</span>
                     </div>
 
                     <div className="pb-2 border-b border-black border-dashed space-y-1 text-[9px] mt-1">
@@ -254,7 +259,7 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
                             <tr key={item.id || idx}>
                               <td className="px-3 py-2 uppercase">{item.vehicle_no}</td>
                               <td className="px-3 py-2 uppercase">{item.grain_category} <span className="opacity-50">({item.subcategory || '-'})</span></td>
-                              <td className="px-3 py-2 text-right">{(item.net_weight / 100).toFixed(2)} Qtl</td>
+                              <td className="px-3 py-2 text-right">{getWeightInQtl(item.net_weight)} Qtl</td>
                               <td className="px-3 py-2 text-right">{formatCurrency(item.rate_per_mt)}</td>
                               <td className="px-3 py-2 text-right">{formatCurrency(item.tollkata_charges)}</td>
                               <td className="px-3 py-2 text-right">{formatCurrency(item.payable_amount)}</td>
@@ -281,18 +286,18 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
                     <>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400 font-black uppercase tracking-widest">Gross Weight</span>
-                        <span className="font-black text-slate-900">{(slip.gross_weight / 100).toFixed(2)} Qtl</span>
+                        <span className="font-black text-slate-900">{getWeightInQtl(slip.gross_weight)} Qtl</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400 font-black uppercase tracking-widest">Tare Weight</span>
-                        <span className="font-black text-slate-900">{(slip.tare_weight / 100).toFixed(2)} Qtl</span>
+                        <span className="font-black text-slate-900">{getWeightInQtl(slip.tare_weight)} Qtl</span>
                       </div>
                       <div className="h-px bg-slate-200" />
                     </>
                   ) : null}
                   <div className="flex justify-between items-center">
                     <span className="text-slate-900 font-black uppercase tracking-widest text-xs">Net Payload</span>
-                    <span className="text-2xl font-black text-slate-900">{(slip.net_weight / 100).toFixed(2)} Qtl</span>
+                    <span className="text-2xl font-black text-slate-900">{getWeightInQtl(slip.net_weight)} Qtl</span>
                   </div>
                 </div>
 
