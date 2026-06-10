@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
       // C. Purchase Trend WB
       applyFilters(
         db('weighbridge_slips')
+          .where('branch_id', branchId)
           .where('status', 'APPROVED')
           .where('entry_type', 'IN')
           .where('is_internal', true)
