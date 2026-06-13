@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { analyticsCache } from '@/lib/analytics-cache';
 import { verifyToken } from '@/lib/auth-utils';
-import { checkRateLimit } from '@/lib/security';
+import { checkRateLimit, encryptData, decryptData } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -109,6 +109,33 @@ export async function POST(request: NextRequest) {
 
     if (payload.role !== 'superadmin' && payload.branchId !== branchId) {
       return NextResponse.json({ error: 'Forbidden: Cannot create stock entries for other branches' }, { status: 403 });
+    }
+
+    // 1. Find or create party in farmers section
+    const targetMobile = partyMobile?.trim();
+    const allFarmers = await db('farmers').select('id', 'mobile', 'name');
+    let farmer = null;
+    
+    if (targetMobile) {
+      farmer = allFarmers.find(f => {
+        if (!f.mobile) return false;
+        try {
+          const plainMobile = decryptData(f.mobile) || f.mobile;
+          return plainMobile === targetMobile;
+        } catch {
+          return f.mobile === targetMobile;
+        }
+      });
+    }
+
+    if (!farmer) {
+      const newMobile = targetMobile || `NA-${Date.now()}`;
+      await db('farmers').insert({
+        name: partyName || (entryType === 'IN' ? 'Unknown Party' : 'Unknown Customer'),
+        mobile: encryptData(newMobile),
+        village: address || null,
+        branch_id: branchId || null
+      });
     }
 
     // Generate a unique group_id and base slip_no

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { analyticsCache } from '@/lib/analytics-cache';
-import { checkRateLimit } from '@/lib/security';
+import { checkRateLimit, encryptData, decryptData } from '@/lib/security';
 
 export async function GET(request: Request) {
   try {
@@ -224,12 +224,29 @@ export async function POST(request: Request) {
     }
 
     // 1. Find or create farmer/customer
-    let farmer = await db('farmers').where('mobile', farmerMobile).first();
+    const targetMobile = farmerMobile?.trim();
+    const allFarmers = await db('farmers').select('id', 'mobile', 'name');
+    let farmer = null;
+    
+    if (targetMobile) {
+      farmer = allFarmers.find(f => {
+        if (!f.mobile) return false;
+        try {
+          const plainMobile = decryptData(f.mobile) || f.mobile;
+          return plainMobile === targetMobile;
+        } catch {
+          return f.mobile === targetMobile;
+        }
+      });
+    }
+
     if (!farmer) {
+      const newMobile = targetMobile || `NA-${Date.now()}`;
       const [newFarmer] = await db('farmers').insert({
         name: farmerName || (entryType === 'IN' ? 'Unknown Farmer' : 'Unknown Customer'),
-        mobile: farmerMobile || `NA-${Date.now()}`,
+        mobile: encryptData(newMobile),
         village: address || null,
+        branch_id: branchId || null
       }).returning('*');
       farmer = newFarmer;
     }
