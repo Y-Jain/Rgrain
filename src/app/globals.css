@@ -16,6 +16,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -48,6 +50,9 @@
   --input: #e2e8f0;
   --ring: #b45309;
   
+  --destructive: #ef4444; /* Red 500 */
+  --destructive-foreground: #ffffff;
+  
   --radius: 0.6rem;
 }
 
@@ -69,6 +74,9 @@
   
   --border: #1e293b;
   --input: #1e293b;
+
+  --destructive: #991b1b; /* Red 800 */
+  --destructive-foreground: #f8fafc;
 }
 
 @layer base {

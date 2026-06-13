@@ -36,16 +36,17 @@ export default function LoginPage() {
         throw new Error(data.error || 'Login failed');
       }
 
-      setAuth(data.user, data.token);
+      setAuth(data.user, data.token || "");
       
-      // Set cookies for middleware
-      document.cookie = `auth-token=${data.token}; path=/; max-age=3600`;
+      // Note: The auth-token cookie is set securely as HttpOnly by the API.
+      // Setting it via document.cookie here overwrites it with 'undefined' (since data.token is undefined)
+      // which causes Safari/iOS to fail authentication checks during routing.
       document.cookie = `user-role=${data.user.role}; path=/; max-age=3600`;
 
       toast.success(`Welcome back, ${data.user.name}!`);
       
       if (data.user.role === "superadmin") {
-        router.push("/superadmin/analytics");
+        window.location.href = "/superadmin/analytics";
       } else if (data.user.role === "staff") {
         const templatePermissions: Record<string, string[]> = {
           "Weighman": ["Weighbridge", "Farmers"],
@@ -79,9 +80,9 @@ export default function LoginPage() {
             }
           }
         }
-        router.push(firstRoute);
+        window.location.href = firstRoute;
       } else {
-        router.push("/dashboard");
+        window.location.href = "/dashboard";
       }
     } catch (error: any) {
       toast.error(error.message);
