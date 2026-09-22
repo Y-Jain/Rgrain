@@ -55,8 +55,10 @@ export default function ApprovalsPage() {
       
       setEditNetWeight(weight?.toString() || "0");
       setEditRate(rate?.toString() || "0");
-      setEditName(selectedSlip.farmer_name || "");
-      setEditMobile(selectedSlip.farmer_mobile || selectedSlip.party_mobile || "");
+      const isUnknown = selectedSlip.farmer_name === 'Unknown Farmer' || selectedSlip.farmer_name === 'Unknown Customer';
+      setEditName(isUnknown ? "" : (selectedSlip.farmer_name || ""));
+      const mobile = selectedSlip.farmer_mobile || selectedSlip.party_mobile || "";
+      setEditMobile(mobile.length > 30 || isUnknown ? "" : mobile);
       setEditAddress(selectedSlip.farmer_village || selectedSlip.address || "");
       setEditVehicle(selectedSlip.vehicle_no || "");
       setEditTollkata(selectedSlip.tollkata_charges?.toString() || "0");
@@ -281,7 +283,9 @@ export default function ApprovalsPage() {
                       {format(new Date(item.created_at), "h:mm a")}
                     </span>
                   </div>
-                  <h3 className="font-black text-slate-900 text-sm">{item.farmer_name}</h3>
+                  <h3 className="font-black text-slate-900 text-sm">
+                    {item.farmer_name === 'Unknown Farmer' || item.farmer_name === 'Unknown Customer' ? 'Walk-in Party' : item.farmer_name}
+                  </h3>
                   <div className="flex items-center justify-between mt-3">
                     <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-70">
                       {item.grain_category} • {Number(item.net_weight).toFixed(2)} kg ({(Number(item.net_weight) / 100).toFixed(2)} Qtl)
@@ -341,8 +345,10 @@ export default function ApprovalsPage() {
                       onClick={() => {
                         setEditNetWeight(selectedSlip.net_weight?.toString() || "0");
                         setEditRate((selectedSlip.type === 'WEIGHBRIDGE' ? selectedSlip.rate_per_mt : selectedSlip.price_per_unit)?.toString() || "0");
-                        setEditName(selectedSlip.farmer_name || "");
-                        setEditMobile(selectedSlip.farmer_mobile || selectedSlip.party_mobile || "");
+                        const isUnknown = selectedSlip.farmer_name === 'Unknown Farmer' || selectedSlip.farmer_name === 'Unknown Customer';
+                        setEditName(isUnknown ? "" : (selectedSlip.farmer_name || ""));
+                        const mobile = selectedSlip.farmer_mobile || selectedSlip.party_mobile || "";
+                        setEditMobile(mobile.length > 30 || isUnknown ? "" : mobile);
                         setEditAddress(selectedSlip.farmer_village || selectedSlip.address || "");
                         setEditVehicle(selectedSlip.vehicle_no || "");
                         setEditTollkata(selectedSlip.tollkata_charges?.toString() || "0");
@@ -397,14 +403,21 @@ export default function ApprovalsPage() {
                             </div>
                           </div>
                         ) : (
-                          <>
-                            <p className="font-black text-slate-900">{selectedSlip.farmer_name}</p>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Mob: {selectedSlip.farmer_mobile || selectedSlip.party_mobile || 'N/A'}</p>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Village/Address: {selectedSlip.farmer_village || selectedSlip.address || 'N/A'}</p>
-                            {selectedSlip.type === 'SMALL_SCALE' && selectedSlip.party_email && (
-                               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Email: {selectedSlip.party_email}</p>
-                            )}
-                          </>
+                          (() => {
+                            const isUnknown = selectedSlip.farmer_name === 'Unknown Farmer' || selectedSlip.farmer_name === 'Unknown Customer';
+                            const mobile = selectedSlip.farmer_mobile || selectedSlip.party_mobile;
+                            const showMobile = !isUnknown && mobile && mobile.length < 30;
+                            return (
+                              <>
+                                <p className="font-black text-slate-900">{isUnknown ? 'Walk-in Party' : selectedSlip.farmer_name}</p>
+                                {showMobile && <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Mob: {mobile}</p>}
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Village/Address: {selectedSlip.farmer_village || selectedSlip.address || 'N/A'}</p>
+                                {selectedSlip.type === 'SMALL_SCALE' && selectedSlip.party_email && (
+                                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Email: {selectedSlip.party_email}</p>
+                                )}
+                              </>
+                            );
+                          })()
                         )}
                       </div>
                     </div>

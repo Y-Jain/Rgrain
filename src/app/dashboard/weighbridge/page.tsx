@@ -748,7 +748,7 @@ export default function WeighbridgePage() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-6">
-                        <div className="space-y-2">
+                        {/* <div className="space-y-2">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Party Name (Optional)</label>
                           <input 
                             type="text" 
@@ -757,8 +757,8 @@ export default function WeighbridgePage() {
                             value={formData.farmerName}
                             onChange={(e) => setFormData({...formData, farmerName: e.target.value})}
                           />
-                        </div>
-                        <div className="space-y-2">
+                        </div> */}
+                        {/* <div className="space-y-2">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Address (Optional)</label>
                           <input 
                             type="text" 
@@ -767,9 +767,9 @@ export default function WeighbridgePage() {
                             value={formData.address}
                             onChange={(e) => setFormData({...formData, address: e.target.value})}
                           />
-                        </div>
+                        </div> */}
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
+                          {/* <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Mobile No</label>
                             <input 
                               type="tel" 
@@ -778,7 +778,7 @@ export default function WeighbridgePage() {
                               value={formData.farmerMobile}
                               onChange={(e) => setFormData({...formData, farmerMobile: e.target.value})}
                             />
-                          </div>
+                          </div> */}
                           <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tollkata S.No</label>
                             <input 
@@ -842,7 +842,7 @@ export default function WeighbridgePage() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                               {/* Vehicle */}
-                              <div className="space-y-2">
+                              {/* <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vehicle No</label>
                                 <input 
                                   type="text" 
@@ -864,7 +864,7 @@ export default function WeighbridgePage() {
                                     <option key={v.id} value={v.vehicle_type}>{v.vehicle_type}</option>
                                   ))}
                                 </select>
-                              </div>
+                              </div> */}
                               
                               {/* Grain */}
                               <div className="space-y-2">
@@ -919,7 +919,7 @@ export default function WeighbridgePage() {
                                   onChange={(e) => handleRateChange(index, e.target.value)}
                                 />
                               </div>
-                              <div className="space-y-2">
+                              {/* <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Driver (Opt)</label>
                                 <input 
                                   type="text" 
@@ -928,12 +928,12 @@ export default function WeighbridgePage() {
                                   value={trolly.driverName}
                                   onChange={(e) => handleTrollyChange(index, 'driverName', e.target.value)}
                                 />
-                              </div>
+                              </div> */}
                             </div>
                             
-                            <div className="mt-4 flex justify-between items-center border-t border-slate-200 pt-4">
+                            {/* <div className="mt-4 flex justify-between items-center border-t border-slate-200 pt-4">
                               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Trolly Value: <span className="text-slate-900">{formatCurrency(trolly.totalAmount)}</span> + <span className="text-primary">{formatCurrency(parseFloat(trolly.tollkataCharges as any) || 0)}</span></span>
-                            </div>
+                            </div> */}
                           </div>
                         ))}
                       </div>
@@ -1423,7 +1423,7 @@ export default function WeighbridgePage() {
            </Card>
 
            {/* Vehicle Rate Settings */}
-           <Card className="border-none shadow-xl rounded-[2.5rem] overflow-hidden">
+           {/* <Card className="border-none shadow-xl rounded-[2.5rem] overflow-hidden">
              <CardHeader className="p-8 border-b border-slate-50">
                <CardTitle className="text-lg font-black uppercase tracking-tight flex items-center gap-3">
                  <Truck className="w-5 h-5 text-primary" />
@@ -1480,7 +1480,7 @@ export default function WeighbridgePage() {
                   </div>
                 </div>
              </CardContent>
-           </Card>
+           </Card> */}
         </div>
       )}
 

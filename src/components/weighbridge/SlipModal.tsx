@@ -17,6 +17,8 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
   const [printFormat, setPrintFormat] = useState<'A4' | 'A5' | 'THERMAL'>('A4');
   const [isBluetoothPrinting, setIsBluetoothPrinting] = useState(false);
 
+  const isUnknownParty = slip?.farmer_name === 'Unknown Farmer' || slip?.farmer_name === 'Unknown Customer' || !slip?.farmer_name;
+
   const getWeightInQtl = (weight: number | string | undefined | null) => {
     const num = parseFloat(weight as string) || 0;
     return (num / 100).toFixed(2);
@@ -93,9 +95,13 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
       text += `DATE: ${new Date(slip.created_at).toLocaleString()}\n`;
       text += `TYPE: ${slip.entry_type === 'OUT' ? 'Dispatch (OUT)' : 'Procurement (IN)'}\n`;
       text += "--------------------------------\n";
-      text += `PARTY: ${slip.farmer_name || 'Walk-in Party'}\n`;
-      text += `MOB: ${slip.farmer_mobile || 'No Mobile'}\n`;
-      text += "--------------------------------\n";
+      if (!isUnknownParty) {
+        text += `PARTY: ${slip.farmer_name}\n`;
+        if (slip.farmer_mobile && slip.farmer_mobile.length < 30) {
+          text += `MOB: ${slip.farmer_mobile}\n`;
+        }
+        text += "--------------------------------\n";
+      }
       
       if (slip.items && slip.items.length > 0) {
         text += "--- ITEMS ---\n";
@@ -211,10 +217,12 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
                   <p><strong>TYPE:</strong> {slip.entry_type === 'OUT' ? 'Dispatch (OUT)' : 'Procurement (IN)'}</p>
                 </div>
 
-                <div className="pb-2 border-b border-black border-dashed text-[9px]">
-                  <p><strong>PARTY:</strong> {slip.farmer_name || 'Walk-in Party'}</p>
-                  <p><strong>MOB:</strong> {slip.farmer_mobile || 'No Mobile'}</p>
-                </div>
+                {!isUnknownParty && (
+                  <div className="pb-2 border-b border-black border-dashed text-[9px]">
+                    <p><strong>PARTY:</strong> {slip.farmer_name}</p>
+                    {slip.farmer_mobile && slip.farmer_mobile.length < 30 && <p><strong>MOB:</strong> {slip.farmer_mobile}</p>}
+                  </div>
+                )}
 
                 {slip.items && slip.items.length > 0 ? (
                   <>
@@ -318,19 +326,21 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
             {/* Slip Body */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-16 mb-8 sm:mb-12 print:mb-4 print:gap-4">
               <div className="space-y-8 print:space-y-3">
-                <div className="space-y-4 print:space-y-1">
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <User className="w-4 h-4 print:w-3 print:h-3" />
-                    <span className="text-[10px] uppercase font-black tracking-widest">Party Details</span>
-                  </div>
-                  <div className="pl-6 border-l-2 border-slate-100">
-                    <p className="text-xl font-black text-slate-900 uppercase">{slip.farmer_name || 'Walk-in Party'}</p>
-                    <div className="flex gap-4 items-center">
-                       <p className="text-sm font-bold text-slate-500">{slip.farmer_mobile || 'No Mobile'}</p>
-                       {slip.address && <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l pl-4 border-slate-200">{slip.address}</p>}
+                {!isUnknownParty && (
+                  <div className="space-y-4 print:space-y-1">
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <User className="w-4 h-4 print:w-3 print:h-3" />
+                      <span className="text-[10px] uppercase font-black tracking-widest">Party Details</span>
+                    </div>
+                    <div className="pl-6 border-l-2 border-slate-100">
+                      <p className="text-xl font-black text-slate-900 uppercase">{slip.farmer_name}</p>
+                      <div className="flex gap-4 items-center">
+                         {slip.farmer_mobile && slip.farmer_mobile.length < 30 && <p className="text-sm font-bold text-slate-500">{slip.farmer_mobile}</p>}
+                         {slip.address && <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l pl-4 border-slate-200">{slip.address}</p>}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {!(slip.items && slip.items.length > 0) && (
                   <>
