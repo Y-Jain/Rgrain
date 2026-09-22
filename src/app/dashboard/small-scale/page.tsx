@@ -420,6 +420,7 @@ export default function SmallScalePage() {
               </CardContent>
             </Card> */}
 
+
             {/* Weighing Section */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-4">
