@@ -359,7 +359,7 @@ export default function SmallScalePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             {/* Party Info Card */}
-            <Card className="border-none shadow-sm overflow-hidden">
+            {/* <Card className="border-none shadow-sm overflow-hidden">
               <div className="h-1 bg-primary" />
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -418,7 +418,8 @@ export default function SmallScalePage() {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
+
 
             {/* Weighing Section */}
             <Card>

@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
-import { Printer, X, Download, Share2, Scale, Truck, User, Box } from "lucide-react";
+import { Printer, X, Download, Share2, Scale, Truck, User, Box, Bluetooth, Loader2 } from "lucide-react";
 import { formatCurrency, cn } from "@/lib/utils";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -15,6 +15,9 @@ interface SlipModalProps {
 export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [printFormat, setPrintFormat] = useState<'A4' | 'A5' | 'THERMAL'>('A4');
+  const [isBluetoothPrinting, setIsBluetoothPrinting] = useState(false);
+
+  const isUnknownParty = slip?.farmer_name === 'Unknown Farmer' || slip?.farmer_name === 'Unknown Customer' || !slip?.farmer_name;
 
   const getWeightInQtl = (weight: number | string | undefined | null) => {
     const num = parseFloat(weight as string) || 0;
@@ -36,6 +39,133 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
     documentTitle: `Slip-${slip?.slip_no || 'Unknown'}`,
     pageStyle: getPageStyle(),
   });
+
+  const handleBluetoothPrint = async () => {
+    try {
+      setIsBluetoothPrinting(true);
+      
+      if (!(navigator as any).bluetooth) {
+        throw new Error("Web Bluetooth is not supported in your browser. Please use Chrome or Edge.");
+      }
+      
+      // Request Bluetooth Device
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [
+          '000018f0-0000-1000-8000-00805f9b34fb', // Generic ESC/POS
+          'e7810a71-73ae-499d-8c15-faa9aef0c3f2'  // Another common one
+        ]
+      });
+
+      const server = await device.gatt?.connect();
+      if (!server) throw new Error("Could not connect to GATT server");
+
+      const services = await server.getPrimaryServices();
+      let writeChar: any = null;
+      
+      for (const service of services) {
+        const characteristics = await service.getCharacteristics();
+        for (const char of characteristics) {
+          if (char.properties.write || char.properties.writeWithoutResponse) {
+            writeChar = char;
+            break;
+          }
+        }
+        if (writeChar) break;
+      }
+
+      if (!writeChar) {
+        throw new Error("Could not find a writable characteristic on this device.");
+      }
+
+      // Generate ESC/POS data
+      const encoder = new TextEncoder();
+      
+      // Basic ESC/POS commands
+      const init = new Uint8Array([0x1B, 0x40]); // Initialize
+      const left = new Uint8Array([0x1B, 0x61, 0x00]); // Left align
+      const feed = new Uint8Array([0x0A, 0x0A, 0x0A, 0x0A]); // Feed 4 lines
+      
+      let text = "";
+      text += "RGrain\n";
+      text += "Premium Agriculture Solutions\n";
+      text += "Contact: +91 7693072877\n";
+      text += "--------------------------------\n";
+      text += `SLIP: #${slip.serial_number || slip.slip_no?.split('-')[1] || slip.slip_no}\n`;
+      text += `DATE: ${new Date(slip.created_at).toLocaleString()}\n`;
+      text += `TYPE: ${slip.entry_type === 'OUT' ? 'Dispatch (OUT)' : 'Procurement (IN)'}\n`;
+      text += "--------------------------------\n";
+      if (!isUnknownParty) {
+        text += `PARTY: ${slip.farmer_name}\n`;
+        if (slip.farmer_mobile && slip.farmer_mobile.length < 30) {
+          text += `MOB: ${slip.farmer_mobile}\n`;
+        }
+        text += "--------------------------------\n";
+      }
+      
+      if (slip.items && slip.items.length > 0) {
+        text += "--- ITEMS ---\n";
+        slip.items.forEach((item: any, idx: number) => {
+          text += `${idx + 1}. VEHICLE: ${item.vehicle_no}\n`;
+          text += `GRAIN: ${item.grain_category} (${item.subcategory || '-'})\n`;
+          text += `NET WT: ${getWeightInQtl(item.net_weight)} Qtl\n`;
+          text += `RATE: Rs.${item.rate_per_mt}\n`;
+          text += `TOLL: Rs.${item.tollkata_charges}\n`;
+          text += `VAL: Rs.${(parseFloat(item.payable_amount as any) || 0) + (parseFloat(item.tollkata_charges as any) || 0)}\n\n`;
+        });
+        text += "--------------------------------\n";
+        text += `GRAND WT: ${(slip.items.reduce((sum: number, item: any) => sum + (parseFloat(item.net_weight as any) || 0), 0) / 100).toFixed(2)} Qtl\n`;
+        text += `TOTAL TOLL: Rs.${slip.items.reduce((sum: number, item: any) => sum + (parseFloat(item.tollkata_charges as any) || 0), 0)}\n`;
+        text += `GRAND TOTAL: Rs.${slip.items.reduce((sum: number, item: any) => sum + (parseFloat(item.payable_amount as any) || 0) + (parseFloat(item.tollkata_charges as any) || 0), 0)}\n`;
+      } else {
+         text += `VEHICLE: ${slip.vehicle_no}\n`;
+         text += `GRAIN: ${slip.grain_category} (${slip.subcategory || 'Default'})\n`;
+         text += "--------------------------------\n";
+         text += `NET WEIGHT: ${getWeightInQtl(slip.net_weight)} Qtl\n`;
+         text += `RATE/QTL: Rs.${slip.rate_per_mt}\n`;
+         text += `TOLLKATA: Rs.${slip.tollkata_charges}\n`;
+         text += `TOTAL: Rs.${(parseFloat(slip.payable_amount as any) || 0) + (parseFloat(slip.tollkata_charges as any) || 0)}\n`;
+      }
+      
+      text += "--------------------------------\n";
+      text += "Thank you for your business!\n";
+      text += "Renixsolution Grain ERP\n";
+      
+      const textData = encoder.encode(text);
+      
+      // Combine all
+      const payload = new Uint8Array(init.length + left.length + textData.length + feed.length);
+      payload.set(init, 0);
+      payload.set(left, init.length);
+      payload.set(textData, init.length + left.length);
+      payload.set(feed, init.length + left.length + textData.length);
+      
+      // Send in chunks of 512 bytes (BLE MTU limits)
+      const CHUNK_SIZE = 512;
+      for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+        const chunk = payload.slice(i, i + CHUNK_SIZE);
+        if (writeChar.properties.writeWithoutResponse) {
+          await writeChar.writeValueWithoutResponse(chunk);
+        } else {
+          await writeChar.writeValue(chunk);
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      
+      device.gatt?.disconnect();
+      alert("Printed successfully via Bluetooth!");
+      
+    } catch (error: any) {
+      console.error("Bluetooth print error:", error);
+      if (error.name === 'NotFoundError' && error.message.includes('User cancelled')) {
+        // User just closed the pairing dialog, no need to show an error alert
+        return;
+      }
+      alert("Bluetooth printing failed: " + error.message + "\n\nMake sure your printer is turned on, paired, and supports Web Bluetooth (BLE).");
+    } finally {
+      setIsBluetoothPrinting(false);
+    }
+  };
 
   if (!isOpen || !slip) return null;
 
@@ -87,10 +217,12 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
                   <p><strong>TYPE:</strong> {slip.entry_type === 'OUT' ? 'Dispatch (OUT)' : 'Procurement (IN)'}</p>
                 </div>
 
-                <div className="pb-2 border-b border-black border-dashed text-[9px]">
-                  <p><strong>PARTY:</strong> {slip.farmer_name || 'Walk-in Party'}</p>
-                  <p><strong>MOB:</strong> {slip.farmer_mobile || 'No Mobile'}</p>
-                </div>
+                {!isUnknownParty && (
+                  <div className="pb-2 border-b border-black border-dashed text-[9px]">
+                    <p><strong>PARTY:</strong> {slip.farmer_name}</p>
+                    {slip.farmer_mobile && slip.farmer_mobile.length < 30 && <p><strong>MOB:</strong> {slip.farmer_mobile}</p>}
+                  </div>
+                )}
 
                 {slip.items && slip.items.length > 0 ? (
                   <>
@@ -194,19 +326,21 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
             {/* Slip Body */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-16 mb-8 sm:mb-12 print:mb-4 print:gap-4">
               <div className="space-y-8 print:space-y-3">
-                <div className="space-y-4 print:space-y-1">
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <User className="w-4 h-4 print:w-3 print:h-3" />
-                    <span className="text-[10px] uppercase font-black tracking-widest">Party Details</span>
-                  </div>
-                  <div className="pl-6 border-l-2 border-slate-100">
-                    <p className="text-xl font-black text-slate-900 uppercase">{slip.farmer_name || 'Walk-in Party'}</p>
-                    <div className="flex gap-4 items-center">
-                       <p className="text-sm font-bold text-slate-500">{slip.farmer_mobile || 'No Mobile'}</p>
-                       {slip.address && <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l pl-4 border-slate-200">{slip.address}</p>}
+                {!isUnknownParty && (
+                  <div className="space-y-4 print:space-y-1">
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <User className="w-4 h-4 print:w-3 print:h-3" />
+                      <span className="text-[10px] uppercase font-black tracking-widest">Party Details</span>
+                    </div>
+                    <div className="pl-6 border-l-2 border-slate-100">
+                      <p className="text-xl font-black text-slate-900 uppercase">{slip.farmer_name}</p>
+                      <div className="flex gap-4 items-center">
+                         {slip.farmer_mobile && slip.farmer_mobile.length < 30 && <p className="text-sm font-bold text-slate-500">{slip.farmer_mobile}</p>}
+                         {slip.address && <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l pl-4 border-slate-200">{slip.address}</p>}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {!(slip.items && slip.items.length > 0) && (
                   <>
@@ -331,41 +465,59 @@ export default function SlipModal({ slip, isOpen, onClose }: SlipModalProps) {
         </div>
 
         {/* Actions */}
-        <div className="px-4 sm:px-10 py-4 sm:py-6 border-t border-gray-100 bg-gray-50 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-1 sm:gap-2 bg-white border border-gray-200 rounded-xl p-1 shrink-0 overflow-x-auto mx-auto lg:mx-0">
-            <button 
-              onClick={() => setPrintFormat('A4')}
-              className={cn("px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap", printFormat === 'A4' ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100")}
-            >A4 Size</button>
-            <button 
-              onClick={() => setPrintFormat('A5')}
-              className={cn("px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap", printFormat === 'A5' ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100")}
-            >A5 (Half)</button>
-            <button 
-              onClick={() => setPrintFormat('THERMAL')}
-              className={cn("px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap", printFormat === 'THERMAL' ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100")}
-            >3" Thermal</button>
+        <div className="px-4 sm:px-10 py-4 sm:py-6 border-t border-gray-100 bg-gray-50 flex flex-col gap-4 sm:gap-5">
+          {/* Top Row: Formats and Secondary Actions */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 w-full">
+            <div className="flex items-center gap-1 sm:gap-2 bg-white border border-gray-200 rounded-xl p-1 shrink-0 overflow-x-auto w-full md:w-auto justify-center">
+              <button 
+                onClick={() => setPrintFormat('A4')}
+                className={cn("px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap", printFormat === 'A4' ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100")}
+              >A4 Size</button>
+              <button 
+                onClick={() => setPrintFormat('A5')}
+                className={cn("px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap", printFormat === 'A5' ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100")}
+              >A5 (Half)</button>
+              <button 
+                onClick={() => setPrintFormat('THERMAL')}
+                className={cn("px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap", printFormat === 'THERMAL' ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100")}
+              >3" Thermal</button>
+            </div>
+            
+            <div className="flex items-center justify-center md:justify-end gap-3 sm:gap-4 w-full md:w-auto">
+              <button 
+                className="px-5 py-2.5 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center justify-center gap-2 transition-all border border-transparent hover:border-slate-200"
+              >
+                <Download className="w-4 h-4" />
+                Download PDF
+              </button>
+              <button 
+                className="px-5 py-2.5 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center justify-center gap-2 transition-all border border-transparent hover:border-slate-200"
+              >
+                <Share2 className="w-4 h-4" />
+                Share Slip
+              </button>
+            </div>
           </div>
-          
-          <div className="flex flex-col sm:flex-row items-center justify-end gap-3 sm:gap-4 w-full lg:w-auto">
-            <button 
-              className="px-6 py-3 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center justify-center gap-2 transition-all border border-transparent hover:border-slate-200"
-            >
-              <Download className="w-4 h-4" />
-              Download PDF
-            </button>
-            <button 
-              className="px-6 py-3 text-xs font-black text-slate-500 hover:bg-white hover:text-slate-900 rounded-xl flex items-center justify-center gap-2 transition-all border border-transparent hover:border-slate-200"
-            >
-              <Share2 className="w-4 h-4" />
-              Share Slip
-            </button>
+
+          {/* Bottom Row: Primary Print Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-end gap-3 sm:gap-4 w-full pt-2 border-t border-gray-200/60 sm:border-none sm:pt-0">
+            {printFormat === 'THERMAL' && (
+              <button 
+                onClick={handleBluetoothPrint}
+                disabled={isBluetoothPrinting}
+                className="px-6 py-3 bg-blue-600 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/20 w-full sm:w-auto whitespace-nowrap disabled:opacity-70"
+              >
+                {isBluetoothPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bluetooth className="w-4 h-4" />}
+                {isBluetoothPrinting ? 'Printing...' : 'Direct Bluetooth'}
+              </button>
+            )}
+
             <button 
               onClick={() => handlePrint()}
-              className="px-10 py-3 bg-slate-900 text-white text-xs font-black rounded-xl flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20 w-full sm:w-auto"
+              className="px-10 py-3 bg-slate-900 text-white text-xs font-black rounded-xl flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20 w-full sm:w-auto whitespace-nowrap"
             >
               <Printer className="w-4 h-4" />
-              Print Official Slip
+              {printFormat === 'THERMAL' ? 'System Print' : 'Print Official Slip'}
             </button>
           </div>
         </div>
