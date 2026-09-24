@@ -203,7 +203,8 @@ export async function POST(request: Request) {
       entryType,
       branchId,
       createdById,
-      trollies // Array of trolley objects
+      trollies, // Array of trolley objects
+      serialNumber // Include serialNumber from body
     } = body;
 
     // SECURITY FIX: Input Validation for Negative Numbers
@@ -263,13 +264,25 @@ export async function POST(request: Request) {
         }).returning('*');
       }
 
-      const nextSerial = (settings.current_serial_number || 0) + 1;
-      const serialToUse = nextSerial < settings.starting_serial_number ? settings.starting_serial_number : nextSerial;
+      let serialNumberPassed = parseInt(serialNumber, 10);
+      let serialToUse;
+      let newCurrentSerial = settings.current_serial_number;
+
+      if (!isNaN(serialNumberPassed)) {
+        serialToUse = serialNumberPassed;
+        if (serialToUse > settings.current_serial_number) {
+          newCurrentSerial = serialToUse;
+        }
+      } else {
+        const nextSerial = (settings.current_serial_number || 0) + 1;
+        serialToUse = nextSerial < settings.starting_serial_number ? settings.starting_serial_number : nextSerial;
+        newCurrentSerial = serialToUse;
+      }
 
       // Update settings
       await trx('weighbridge_settings')
         .where({ id: settings.id })
-        .update({ current_serial_number: serialToUse, updated_at: trx.fn.now() });
+        .update({ current_serial_number: newCurrentSerial, updated_at: trx.fn.now() });
 
       const insertedSlips = [];
 
@@ -340,7 +353,7 @@ export async function POST(request: Request) {
       return insertedSlips;
     });
 
-    const slipWithFarmer = {
+      const slipWithFarmer = {
       ...newSlip[0], // We can just return the first one as representative for immediate UI logic, OR return all. Let's return all, and add items array.
       farmer_name: farmer.name,
       farmer_mobile: farmer.mobile,
@@ -351,6 +364,9 @@ export async function POST(request: Request) {
     return NextResponse.json(slipWithFarmer);
   } catch (error: any) {
     console.error("Slip POST Error:", error);
+    if (error.message && error.message.includes("duplicate key value violates unique constraint")) {
+      return NextResponse.json({ error: "The Tollkata S.No you provided is already in use. Please enter a different number or refresh the page." }, { status: 400 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
